@@ -319,15 +319,90 @@
 // CONFIGURACIÓN DE CAPAS
 // =====================================================================
 const LAYER_CONFIG = {
-  tg_lote:           { claves: ['cod_sector','cod_mzna','cod_lote'],                                      campoArea: 'area', tipoGeom: 'polygon', excel: true },
-  tg_manzana:        { claves: ['cod_sector','cod_mzna'],                                                 campoArea: null,   tipoGeom: 'polygon', calcularArea: true, excel: false },
-  tg_edifica:        { claves: ['cod_sector','cod_mzna','cod_lote','cod_edific'],                          campoArea: 'area', tipoGeom: 'polygon', excel: true },
-  tg_construccion:   { claves: ['cod_sector','cod_mzna','cod_lote','cod_edific','cod_piso'],               campoArea: 'area', tipoGeom: 'polygon', excel: true },
-  tg_construccion_2: { claves: ['cod_sector','cod_mzna','cod_lote','cod_edific','cod_piso','categoria'],   campoArea: 'area', tipoGeom: 'polygon', excel: true },
-  tg_puerta:         { claves: ['cod_sector','cod_mzna','cod_lote','orden','tipo','num_munici'],           campoArea: null,   tipoGeom: 'point',   excel: true },
-  obras_complementarias_1: { claves: ['cod_sector','cod_mzna'],                                           campoArea: 'area', tipoGeom: 'polygon', opcional: true, excel: false },
-  obras_complementarias_2: { claves: ['cod_sector','cod_mzna'],                                           campoArea: 'perimetro', tipoGeom: 'line', opcional: true, excel: false },
-  obras_complementarias_3: { claves: ['cod_sector','cod_mzna'],                                           campoArea: null,   tipoGeom: 'point',   opcional: true, excel: false },
+  // camposOrden: orden exacto de campos en el gpkg final
+  // recalcularArea: true = siempre recalcular desde geometría (round($area,2) de QGIS)
+  // campoArea: nombre del campo área a crear si no existe
+  // opcionales: fid y area (togglables); el resto son obligatorios
+  tg_lote: {
+    camposOrden:    ['fid','ubigeo','cod_sector','cod_mzna','cod_lote','area'],
+    claves:         ['ubigeo','cod_sector','cod_mzna','cod_lote'],
+    campoArea:      'area',
+    recalcularArea: true,
+    tipoGeom:       'polygon',
+    excel:          true,
+    excelNombre:    'tg_lote',
+  },
+  tg_manzana: {
+    camposOrden:    ['fid','ubigeo','cod_sector','cod_mzna','area'],
+    claves:         ['ubigeo','cod_sector','cod_mzna'],
+    campoArea:      'area',
+    recalcularArea: true,
+    tipoGeom:       'polygon',
+    excel:          false,
+  },
+  tg_edifica: {
+    camposOrden:    ['fid','ubigeo','cod_sector','cod_mzna','cod_lote','cod_edific','area'],
+    claves:         ['ubigeo','cod_sector','cod_mzna','cod_lote','cod_edific'],
+    campoArea:      'area',
+    recalcularArea: true,
+    tipoGeom:       'polygon',
+    excel:          true,
+    excelNombre:    'tg_edifica',
+  },
+  tg_construccion: {
+    camposOrden:    ['fid','ubigeo','cod_sector','cod_mzna','cod_lote','cod_edific','cod_piso','area'],
+    claves:         ['ubigeo','cod_sector','cod_mzna','cod_lote','cod_edific','cod_piso'],
+    campoArea:      'area',
+    recalcularArea: true,
+    tipoGeom:       'polygon',
+    excel:          true,
+    excelNombre:    'tg_construccion',
+  },
+  tg_construccion_2: {
+    camposOrden:    ['fid','ubigeo','cod_sector','cod_mzna','cod_lote','cod_edific','cod_piso','categoria','area'],
+    claves:         ['ubigeo','cod_sector','cod_mzna','cod_lote','cod_edific','cod_piso','categoria'],
+    campoArea:      'area',
+    recalcularArea: true,
+    tipoGeom:       'polygon',
+    excel:          true,
+    excelNombre:    'tg_construccion_2',
+  },
+  tg_puerta: {
+    camposOrden:    ['fid','ubigeo','cod_sector','cod_mzna','cod_lote','tipo','num_munici','orden'],
+    claves:         ['ubigeo','cod_sector','cod_mzna','cod_lote','tipo','num_munici','orden'],
+    campoArea:      null,
+    recalcularArea: false,
+    tipoGeom:       'point',
+    excel:          true,
+    excelNombre:    'tg_puerta',
+  },
+  obras_complementarias_1: {
+    camposOrden:    ['fid','tipo','cod_sector','cod_mzna','UCA','area'],
+    claves:         ['tipo','cod_sector','cod_mzna','UCA'],
+    campoArea:      'area',
+    recalcularArea: true,
+    tipoGeom:       'polygon',
+    opcional:       true,
+    excel:          false,
+  },
+  obras_complementarias_2: {
+    camposOrden:    ['fid','tipo','cod_sector','cod_mzna','UCA','perimetro'],
+    claves:         ['tipo','cod_sector','cod_mzna','UCA'],
+    campoArea:      'perimetro',
+    recalcularArea: false,
+    tipoGeom:       'line',
+    opcional:       true,
+    excel:          false,
+  },
+  obras_complementarias_3: {
+    camposOrden:    ['fid','tipo','cod_sector','cod_mzna','UCA'],
+    claves:         ['tipo','cod_sector','cod_mzna','UCA'],
+    campoArea:      null,
+    recalcularArea: false,
+    tipoGeom:       'point',
+    opcional:       true,
+    excel:          false,
+  },
 };
 
 // Estado global
@@ -681,13 +756,16 @@ async function procesarAcopio() {
   for (const layer of layersToProcesar) {
     const cfg = LAYER_CONFIG[layer];
     const clavesCfg = cfg.claves;
-    const campoArea = cfg.campoArea;
+    const campoArea    = cfg.campoArea;      // nombre del campo área
+    const recalcArea   = cfg.recalcularArea; // siempre recalcular desde geom
+    const camposOrden  = cfg.camposOrden || [];
     const removedFields = state.fieldRemovals[layer] || new Set();
+    // Campos finales respetando orden definido, excluyendo los eliminados por usuario
+    const camposFinales = camposOrden.filter(c => !removedFields.has(c));
 
     let allRows = [];
-    let fieldsInfo = null;
     let geomTypeName = 'GEOMETRY';
-    const seenKeys = new Map(); // key -> {fname, rowIdx}
+    const seenKeys = new Map();
     let dupCount = 0;
     const dupList = [];
 
@@ -705,47 +783,44 @@ async function procesarAcopio() {
         const meta = layersMeta.find(l => l.name === layer);
         const geomCol = meta ? meta.geomCol : 'geom';
 
+        // Campos reales que existen en este archivo
         const rawFields = getFieldsFromDb(db, layer);
-        const nonGeomFields = rawFields.filter(f =>
-          f.name.toLowerCase() !== geomCol.toLowerCase() &&
-          f.name.toLowerCase() !== 'fid' &&
-          !removedFields.has(f.name)
+        const rawNames = new Set(rawFields.map(f => f.name.toLowerCase()));
+
+        // Columnas a leer: camposFinales que existen en el archivo (excepto area que puede no existir)
+        const colsToRead = camposFinales.filter(c =>
+          c !== (campoArea) &&           // area se calcula, no se lee
+          c.toLowerCase() !== 'fid' &&   // fid se excluye de lectura
+          rawNames.has(c.toLowerCase())
         );
 
-        if (!fieldsInfo) {
-          fieldsInfo = nonGeomFields.map(f => ({ name: f.name, type: f.type }));
-        }
-
         // Leer con geometría
-        const geomRows = db.exec(`SELECT ${nonGeomFields.map(f=>`"${f.name}"`).join(',')}, "${geomCol}" FROM "${layer}"`);
+        const selectCols = colsToRead.map(c => `"${c}"`).join(',');
+        const query = selectCols
+          ? `SELECT ${selectCols}, "${geomCol}" FROM "${layer}"`
+          : `SELECT "${geomCol}" FROM "${layer}"`;
+        const geomRows = db.exec(query);
         if (!geomRows.length) { db.close(); step++; setProgress(Math.round(step/totalSteps*90)); continue; }
 
-        const colNames = nonGeomFields.map(f => f.name);
         for (const row of geomRows[0].values) {
           const obj = {};
-          colNames.forEach((c, i) => { obj[c] = row[i]; });
-          obj.__geom__ = row[row.length - 1]; // blob
+          colsToRead.forEach((c, i) => { obj[c] = row[i]; });
+          obj.__geom__ = row[row.length - 1]; // blob geometría
 
-          // Calcular área
-          if (campoArea && obj.__geom__) {
-            const area = calcAreaFromBlob(obj.__geom__);
-            if (area !== null) obj[campoArea] = area;
-          } else if (cfg.calcularArea && obj.__geom__) {
-            // tg_manzana no tiene campo area, lo añadimos
-            const area = calcAreaFromBlob(obj.__geom__);
-            if (area !== null) obj['area'] = area;
+          // Recalcular área con round($area, 2) si corresponde y no fue eliminada
+          if (campoArea && !removedFields.has(campoArea) && recalcArea && obj.__geom__) {
+            const areaCalc = calcAreaFromBlob(obj.__geom__);
+            obj[campoArea] = areaCalc !== null ? areaCalc : null;
           }
 
           // Detección duplicados
           const keyParts = clavesCfg.map(k => obj[k] !== undefined ? String(obj[k]) : '?');
           const key = keyParts.join('|');
-
           if (seenKeys.has(key)) {
             dupCount++;
             const prev = seenKeys.get(key);
             const dupMsg = `Clave [${key}] → "${prev.fname}" y "${file.name}"`;
             if (!dupList.includes(dupMsg)) dupList.push(dupMsg);
-            // Conservar de igual modo (no eliminar, solo reportar)
           } else {
             seenKeys.set(key, { fname: file.name });
           }
@@ -762,14 +837,17 @@ async function procesarAcopio() {
       setProgress(Math.round(step / totalSteps * 90));
     }
 
-    // Si tg_manzana no tenía campo area en el origen, añadirlo a fieldsInfo
-    if (layer === 'tg_manzana' && fieldsInfo && !fieldsInfo.find(f=>f.name==='area') && allRows.some(r=>r.area!==undefined)) {
-      fieldsInfo.push({ name: 'area', type: 'REAL' });
-    }
+    // Construir fieldsInfo desde camposFinales (respetando orden y exclusiones)
+    const fieldsInfo = camposFinales
+      .filter(c => c.toLowerCase() !== 'fid') // fid lo maneja el gpkg como PK
+      .map(c => ({
+        name: c,
+        type: c === campoArea ? 'REAL' : 'TEXT'
+      }));
 
     if (allRows.length > 0) {
       mergedData[layer] = {
-        fields: fieldsInfo || [],
+        fields: fieldsInfo,
         rows: allRows,
         geomTypeName,
         duplicates: dupCount,
@@ -801,7 +879,8 @@ async function procesarAcopio() {
 
   const excels = {};
   for (const [ln, ld] of layersConExcel) {
-    excels[ln] = buildExcel(ln, ld.fields, ld.rows);
+    const excelNombre = LAYER_CONFIG[ln]?.excelNombre || ln;
+    excels[excelNombre] = buildExcel(excelNombre, ld.fields, ld.rows);
   }
 
   setProgress(98);
@@ -813,8 +892,8 @@ async function procesarAcopio() {
   const inputNombre = ($('nombreAcopio').value || '').trim().replace(/[^a-zA-Z0-9_\-]/g,'_');
   const nombreBase = inputNombre || `acopio_${fecha}`;
   zip.file(`${nombreBase}.gpkg`, gpkgBytes);
-  for (const [ln, xls] of Object.entries(excels)) {
-    zip.file(`excel/${ln}_${nombreBase}.xlsx`, xls);
+  for (const [excelNombre, xls] of Object.entries(excels)) {
+    zip.file(`excel/${excelNombre}.xlsx`, xls);
   }
 
   const zipBlob = await zip.generateAsync({ type: 'blob' });
@@ -930,28 +1009,47 @@ function buildCamposUI() {
 function renderCamposGrid(layerName) {
   const grid = $('camposGrid');
   grid.innerHTML = '';
-  const fields = state.layerFields[layerName] || [];
   const cfg = LAYER_CONFIG[layerName] || {};
-  const claves = cfg.claves || [];
+  const camposOrden = cfg.camposOrden || [];
   const removed = state.fieldRemovals[layerName] || new Set();
+  // Solo fid y area son opcionales (eliminables)
+  const OPCIONALES = new Set(['fid', cfg.campoArea].filter(Boolean));
 
-  for (const f of fields) {
-    const esClave = claves.includes(f.name);
-    const esEliminado = removed.has(f.name);
+  for (const fname of camposOrden) {
+    const esOpcional = OPCIONALES.has(fname);
+    const esArea     = fname === cfg.campoArea;
+    const esFid      = fname === 'fid';
+    const esEliminado = removed.has(fname);
+
     const div = document.createElement('div');
-    div.className = 'campo-item' + (esClave ? ' clave' : '') + (esEliminado ? ' eliminado' : '');
-    div.innerHTML = `
-      <span class="cicon">${esClave ? '🔑' : (esEliminado ? '🗑️' : '📋')}</span>
-      <span>${f.name}</span>
-      ${esClave ? '<span class="cbadge">CLAVE</span>' : ''}
-      ${f.name === (cfg.campoArea) && !esClave ? '<span class="cbadge" style="background:var(--verde)">ÁREA</span>' : ''}
-    `;
-    if (!esClave) {
+    let clsExtra = '';
+    if (!esOpcional) clsExtra = ' clave';
+    if (esEliminado)  clsExtra += ' eliminado';
+    div.className = 'campo-item' + clsExtra;
+
+    let icono = esEliminado ? '🗑️' : (esOpcional ? '📋' : '🔑');
+    let badge = '';
+    if (!esOpcional)  badge = '<span class="cbadge">OBLIGATORIO</span>';
+    if (esArea)       badge = '<span class="cbadge" style="background:var(--verde)">ÁREA ✓ recalc.</span>';
+    if (esFid)        badge = '<span class="cbadge" style="background:var(--gris3)">FID</span>';
+    if (esArea && esEliminado) badge = '<span class="cbadge" style="background:var(--rojo)">ELIMINADO</span>';
+    if (esFid && esEliminado)  badge = '<span class="cbadge" style="background:var(--rojo)">ELIMINADO</span>';
+
+    div.innerHTML = `<span class="cicon">${icono}</span><span>${fname}</span>${badge}`;
+
+    if (esOpcional) {
       div.style.cursor = 'pointer';
-      div.onclick = () => toggleField(layerName, f.name);
+      div.title = esEliminado ? 'Toca para incluir' : 'Toca para eliminar';
+      div.onclick = () => toggleField(layerName, fname);
     }
     grid.appendChild(div);
   }
+
+  // Nota informativa
+  const nota = document.createElement('div');
+  nota.style.cssText = 'grid-column:span 2;font-size:0.72rem;color:var(--gris3);margin-top:4px;';
+  nota.textContent = '🔑 Obligatorio — no se puede eliminar  |  📋 Toca para eliminar/incluir';
+  grid.appendChild(nota);
 }
 
 function toggleField(layerName, fieldName) {
@@ -984,15 +1082,13 @@ async function handleFiles(newFiles) {
       const layers = getLayersFromDb(db);
       item.layers = layers.map(l => l.name);
 
-      // Recopilar campos por capa
+      // Recopilar campos por capa: usar camposOrden definido en LAYER_CONFIG
       for (const l of layers) {
         if (!LAYER_CONFIG[l.name]) continue;
+        // Siempre usar el orden canónico definido, no lo que venga en el archivo
         if (!state.layerFields[l.name]) {
-          const fields = getFieldsFromDb(db, l.name).filter(f =>
-            f.name.toLowerCase() !== l.geomCol.toLowerCase() &&
-            f.name.toLowerCase() !== 'fid'
-          );
-          state.layerFields[l.name] = fields;
+          state.layerFields[l.name] = (LAYER_CONFIG[l.name].camposOrden || [])
+            .map(c => ({ name: c, type: c === (LAYER_CONFIG[l.name].campoArea) ? 'REAL' : 'TEXT' }));
         }
       }
       db.close();

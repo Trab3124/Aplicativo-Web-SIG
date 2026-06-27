@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
+<meta name="apple-mobile-web-app-capable" content="yes"/>
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+<meta name="apple-mobile-web-app-title" content="Acopio SIG"/>
+<title>Acopio SIG Catastral</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/sql-wasm.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --azul:    #1a4f7a;
+    --azul2:   #2371aa;
+    --verde:   #2a7d4f;
+    --verde2:  #34a363;
+    --rojo:    #c0392b;
+    --naranja: #e67e22;
+    --gris1:   #f0f4f8;
+    --gris2:   #dce3ea;
+    --gris3:   #9aabb8;
+    --texto:   #1c2b36;
+    --blanco:  #ffffff;
+    --radio:   10px;
+    --sombra:  0 2px 12px rgba(0,0,0,0.10);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--gris1);
+    color: var(--texto);
+    min-height: 100vh;
+    padding-bottom: 40px;
+  }
+  header {
+    background: linear-gradient(135deg, var(--azul) 0%, var(--azul2) 100%);
+    color: var(--blanco);
+    padding: 18px 20px 14px;
+    position: sticky; top: 0; z-index: 100;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+  }
+  header h1 { font-size: 1.15rem; font-weight: 700; letter-spacing: 0.3px; }
+  header p  { font-size: 0.75rem; opacity: 0.80; margin-top: 2px; }
+
+  .container { max-width: 700px; margin: 0 auto; padding: 18px 14px; }
+
+  /* TARJETAS */
+  .card {
+    background: var(--blanco);
+    border-radius: var(--radio);
+    box-shadow: var(--sombra);
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+  .card-header {
+    background: var(--azul);
+    color: var(--blanco);
+    padding: 11px 16px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .card-header.verde { background: var(--verde); }
+  .card-header.naranja { background: var(--naranja); }
+  .card-body { padding: 16px; }
+
+  /* ZONA DROP */
+  #dropZone {
+    border: 2.5px dashed var(--gris3);
+    border-radius: var(--radio);
+    padding: 32px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    background: var(--gris1);
+  }
+  #dropZone.over { border-color: var(--azul2); background: #e8f2fb; }
+  #dropZone .icon { font-size: 2.4rem; margin-bottom: 10px; }
+  #dropZone p { font-size: 0.88rem; color: #5a7080; line-height: 1.5; }
+  #dropZone strong { color: var(--azul); }
+  #fileInput { display: none; }
+
+  /* LISTA DE ARCHIVOS */
+  #fileList { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .file-item {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--gris1); border-radius: 7px;
+    padding: 9px 12px; font-size: 0.82rem;
+  }
+  .file-item .fname { flex: 1; font-weight: 500; color: var(--texto); word-break: break-all; }
+  .file-item .fsize { color: var(--gris3); font-size: 0.75rem; white-space: nowrap; }
+  .file-item .fstatus { font-size: 0.75rem; white-space: nowrap; }
+  .file-item .fstatus.ok  { color: var(--verde2); }
+  .file-item .fstatus.err { color: var(--rojo); }
+  .file-item .fstatus.pen { color: var(--naranja); }
+  .btn-remove {
+    background: none; border: none; color: var(--gris3);
+    cursor: pointer; font-size: 1rem; padding: 2px 4px;
+    line-height: 1;
+  }
+  .btn-remove:hover { color: var(--rojo); }
+
+  /* BOTONES */
+  .btn {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 11px 20px; border-radius: 8px; border: none;
+    font-size: 0.9rem; font-weight: 600; cursor: pointer;
+    transition: opacity 0.15s, transform 0.1s;
+    width: 100%; justify-content: center; margin-top: 4px;
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  .btn-primary { background: var(--azul2); color: var(--blanco); }
+  .btn-success { background: var(--verde); color: var(--blanco); }
+  .btn-danger  { background: var(--rojo);  color: var(--blanco); }
+  .btn-outline {
+    background: transparent; color: var(--azul2);
+    border: 2px solid var(--azul2);
+  }
+
+  /* GESTOR DE CAMPOS */
+  #camposSection { display: none; }
+  .layer-tab-bar {
+    display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px;
+  }
+  .layer-tab {
+    padding: 5px 12px; border-radius: 20px; font-size: 0.78rem;
+    border: 1.5px solid var(--gris2); background: var(--blanco);
+    cursor: pointer; font-weight: 500; color: #5a7080;
+    transition: all 0.15s;
+  }
+  .layer-tab.active {
+    background: var(--azul2); color: var(--blanco); border-color: var(--azul2);
+  }
+  .campos-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 7px;
+  }
+  .campo-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 10px; border-radius: 7px;
+    background: var(--gris1); font-size: 0.82rem;
+    cursor: pointer; user-select: none;
+    border: 1.5px solid transparent;
+    transition: all 0.12s;
+  }
+  .campo-item.eliminado {
+    background: #fdecea; border-color: #f5b7b1; color: var(--rojo);
+    text-decoration: line-through;
+  }
+  .campo-item .cicon { font-size: 0.9rem; }
+  .campo-item span { flex: 1; word-break: break-all; }
+  .campo-item .cbadge {
+    font-size: 0.65rem; background: var(--azul2); color: var(--blanco);
+    padding: 1px 5px; border-radius: 10px; white-space: nowrap;
+  }
+  .campo-item.clave .cbadge { background: var(--verde); }
+
+  /* PROGRESO */
+  #progressSection { display: none; }
+  .progress-bar-wrap {
+    background: var(--gris2); border-radius: 20px; height: 10px; overflow: hidden;
+    margin: 10px 0;
+  }
+  .progress-bar {
+    height: 100%; background: linear-gradient(90deg, var(--azul2), var(--verde2));
+    border-radius: 20px; transition: width 0.3s;
+    width: 0%;
+  }
+  #progressLog {
+    font-size: 0.78rem; color: #5a7080; max-height: 150px;
+    overflow-y: auto; line-height: 1.7;
+  }
+  #progressLog .log-ok  { color: var(--verde2); }
+  #progressLog .log-warn{ color: var(--naranja); }
+  #progressLog .log-err { color: var(--rojo); }
+
+  /* REPORTE */
+  #reportSection { display: none; }
+  .reporte-tabla {
+    width: 100%; border-collapse: collapse; font-size: 0.8rem;
+  }
+  .reporte-tabla th {
+    background: var(--azul); color: var(--blanco);
+    padding: 7px 10px; text-align: left; font-weight: 600;
+  }
+  .reporte-tabla td { padding: 6px 10px; border-bottom: 1px solid var(--gris2); }
+  .reporte-tabla tr:last-child td { border-bottom: none; }
+  .reporte-tabla tr:nth-child(even) td { background: var(--gris1); }
+  .badge-num {
+    display: inline-block; background: var(--azul2); color: var(--blanco);
+    padding: 1px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600;
+  }
+  .badge-warn {
+    display: inline-block; background: var(--naranja); color: var(--blanco);
+    padding: 1px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 600;
+  }
+
+  /* DUPLICADOS */
+  .dup-section { margin-top: 12px; }
+  .dup-header {
+    font-size: 0.8rem; font-weight: 600; color: var(--naranja);
+    margin-bottom: 6px; display: flex; align-items: center; gap: 6px;
+  }
+  .dup-list {
+    font-size: 0.75rem; background: #fff8f0; border-radius: 7px;
+    padding: 8px 12px; max-height: 140px; overflow-y: auto;
+    border: 1px solid #f5cba7; color: #7d4e00; line-height: 1.9;
+  }
+
+  /* RESUMEN STATS */
+  .stats-grid {
+    display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 14px;
+  }
+  .stat-box {
+    background: var(--gris1); border-radius: 8px; padding: 12px 14px;
+    text-align: center;
+  }
+  .stat-box .stat-n { font-size: 1.6rem; font-weight: 700; color: var(--azul2); }
+  .stat-box .stat-l { font-size: 0.72rem; color: var(--gris3); margin-top: 2px; }
+
+  .hint { font-size: 0.75rem; color: var(--gris3); margin-top: 6px; text-align: center; }
+  .divider { border: none; border-top: 1px solid var(--gris2); margin: 12px 0; }
+
+  @media (max-width: 420px) {
+    .campos-grid { grid-template-columns: 1fr; }
+    .stats-grid  { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🗂️ Acopio SIG Catastral</h1>
+  <p>Fusión de GeoPackages · EPSG:32718 · Generación de Excel + ZIP</p>
+</header>
+
+<div class="container">
+
+  <!-- PASO 1: CARGAR ARCHIVOS -->
+  <div class="card">
+    <div class="card-header">📂 Paso 1 — Cargar archivos .gpkg</div>
+    <div class="card-body">
+      <div id="dropZone">
+        <div class="icon">📦</div>
+        <p>Toca aquí para seleccionar tus archivos <strong>.gpkg</strong><br/>
+        Puedes seleccionar varios a la vez</p>
+      </div>
+      <input type="file" id="fileInput" accept=".gpkg" multiple/>
+      <div id="fileList"></div>
+    </div>
+  </div>
+
+  <!-- PASO 2: GESTIONAR CAMPOS -->
+  <div class="card" id="camposSection">
+    <div class="card-header naranja">🗑️ Paso 2 — Gestionar campos (opcional)</div>
+    <div class="card-body">
+      <p style="font-size:0.82rem;color:#5a7080;margin-bottom:12px;">
+        Toca un campo para <strong>marcarlo como eliminado</strong> del acopio final. Los campos clave no se pueden eliminar.
+      </p>
+      <div class="layer-tab-bar" id="layerTabs"></div>
+      <div class="campos-grid" id="camposGrid"></div>
+      <hr class="divider"/>
+      <button class="btn btn-primary" id="btnProcesar">
+        ⚙️ Generar Acopio
+      </button>
+    </div>
+  </div>
+
+  <!-- PROGRESO -->
+  <div class="card" id="progressSection">
+    <div class="card-header">⏳ Procesando...</div>
+    <div class="card-body">
+      <div class="progress-bar-wrap">
+        <div class="progress-bar" id="progressBar"></div>
+      </div>
+      <div id="progressLog"></div>
+    </div>
+  </div>
+
+  <!-- REPORTE Y DESCARGA -->
+  <div class="card" id="reportSection">
+    <div class="card-header verde">✅ Resultado del Acopio</div>
+    <div class="card-body">
+      <div class="stats-grid" id="statsGrid"></div>
+      <table class="reporte-tabla" id="reporteTabla">
+        <thead>
+          <tr>
+            <th>Capa</th>
+            <th>Registros totales</th>
+            <th>Duplicados</th>
+          </tr>
+        </thead>
+        <tbody id="reporteBody"></tbody>
+      </table>
+      <div id="dupSection" class="dup-section"></div>
+      <hr class="divider"/>
+      <button class="btn btn-success" id="btnDescargar">
+        💾 Descargar ZIP (gpkg + Excel)
+      </button>
+      <p class="hint">El ZIP contiene el .gpkg fusionado y un Excel por cada capa con área recalculada</p>
+      <hr class="divider"/>
+      <button class="btn btn-outline" id="btnReset" style="margin-top:0">
+        🔄 Nuevo acopio
+      </button>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// =====================================================================
+// CONFIGURACIÓN DE CAPAS
+// =====================================================================
+const LAYER_CONFIG = {
+  tg_lote:           { claves: ['cod_sector','cod_mzna','cod_lote'],                                      campoArea: 'area', tipoGeom: 'polygon', excel: true },
+  tg_manzana:        { claves: ['cod_sector','cod_mzna'],                                                 campoArea: null,   tipoGeom: 'polygon', calcularArea: true, excel: false },
+  tg_edifica:        { claves: ['cod_sector','cod_mzna','cod_lote','cod_edific'],                          campoArea: 'area', tipoGeom: 'polygon', excel: true },
+  tg_construccion:   { claves: ['cod_sector','cod_mzna','cod_lote','cod_edific','cod_piso'],               campoArea: 'area', tipoGeom: 'polygon', excel: true },
+  tg_construccion_2: { claves: ['cod_sector','cod_mzna','cod_lote','cod_edific','cod_piso','categoria'],   campoArea: 'area', tipoGeom: 'polygon', excel: true },
+  tg_puerta:         { claves: ['cod_sector','cod_mzna','cod_lote','orden','tipo','num_munici'],           campoArea: null,   tipoGeom: 'point',   excel: true },
+  obras_complementarias_1: { claves: ['cod_sector','cod_mzna'],                                           campoArea: 'area', tipoGeom: 'polygon', opcional: true, excel: false },
+  obras_complementarias_2: { claves: ['cod_sector','cod_mzna'],                                           campoArea: 'perimetro', tipoGeom: 'line', opcional: true, excel: false },
+  obras_complementarias_3: { claves: ['cod_sector','cod_mzna'],                                           campoArea: null,   tipoGeom: 'point',   opcional: true, excel: false },
+};
+
+// Estado global
+let state = {
+  files: [],           // {name, size, buffer, layers:[]}
+  SQL: null,
+  fieldRemovals: {},   // {layerName: Set<fieldName>}
+  layerFields: {},     // {layerName: [fields]}
+  detectedLayers: [],  // capas encontradas en los gpkg cargados
+  resultData: null,    // datos procesados para descarga
+};
+
+// =====================================================================
+// SQL.JS INIT
+// =====================================================================
+async function initSQL() {
+  if (state.SQL) return state.SQL;
+  state.SQL = await initSqlJs({
+    locateFile: f => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.2/${f}`
+  });
+  return state.SQL;
+}
+
+// =====================================================================
+// UI HELPERS
+// =====================================================================
+function $(id) { return document.getElementById(id); }
+
+function log(msg, type='') {
+  const div = $('progressLog');
+  const line = document.createElement('div');
+  line.className = type ? `log-${type}` : '';
+  line.textContent = msg;
+  div.appendChild(line);
+  div.scrollTop = div.scrollHeight;
+}
+
+function setProgress(pct) {
+  $('progressBar').style.width = pct + '%';
+}
+
+function fmtSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1048576) return (bytes/1024).toFixed(1) + ' KB';
+  return (bytes/1048576).toFixed(1) + ' MB';
+}
+
+function showSection(id) { $(id).style.display = 'block'; }
+function hideSection(id) { $(id).style.display = 'none'; }
+
+// =====================================================================
+// LEER GPKG (SQLite)
+// =====================================================================
+async function readGpkg(buffer) {
+  const SQL = await initSQL();
+  const db = new SQL.Database(new Uint8Array(buffer));
+  return db;
+}
+
+function getLayersFromDb(db) {
+  try {
+    const res = db.exec(`SELECT table_name, geometry_column_name, srs_id FROM gpkg_contents WHERE data_type='features'`);
+    if (!res.length) return [];
+    return res[0].values.map(r => ({ name: r[0], geomCol: r[1], srs: r[2] }));
+  } catch(e) { return []; }
+}
+
+function getFieldsFromDb(db, table) {
+  try {
+    const res = db.exec(`PRAGMA table_info("${table}")`);
+    if (!res.length) return [];
+    return res[0].values.map(r => ({ cid: r[0], name: r[1], type: r[2] }));
+  } catch(e) { return []; }
+}
+
+function getRowsFromDb(db, table, fields) {
+  try {
+    const cols = fields.map(f => `"${f}"`).join(',');
+    const res = db.exec(`SELECT ${cols} FROM "${table}"`);
+    if (!res.length) return [];
+    return res[0].values;
+  } catch(e) { return []; }
+}
+
+function getGeomFromDb(db, table, geomCol, fields) {
+  try {
+    const cols = fields.map(f => `"${f}"`).join(',');
+    const res = db.exec(`SELECT ${cols}, "${geomCol}" FROM "${table}"`);
+    if (!res.length) return [];
+    return res[0].values;
+  } catch(e) { return []; }
+}
+
+// =====================================================================
+// PARSEO WKB (área desde geometría GPKG)
+// =====================================================================
+// GeoPackage geometría = header GPKG + WKB estándar
+// Para calcular área en JS desde WKB de polígono en UTM
+
+function parseGpkgGeom(blob) {
+  // blob es Uint8Array con header GPKG + WKB
+  if (!blob || blob.length < 8) return null;
+  // Magic GP = 0x4750, version, flags, srs_id
+  const magic = (blob[0] << 8) | blob[1];
+  if (magic !== 0x4750) return null;
+  const flags = blob[3];
+  const envelopeCode = (flags >> 1) & 0x07;
+  const envelopeSizes = [0, 32, 48, 48, 64];
+  const envSize = envelopeSizes[envelopeCode] || 0;
+  const wkbOffset = 8 + envSize;
+  if (wkbOffset >= blob.length) return null;
+  return parseWKB(blob, wkbOffset);
+}
+
+function readFloat64(arr, offset, littleEndian) {
+  const buf = new ArrayBuffer(8);
+  const view = new DataView(buf);
+  for (let i = 0; i < 8; i++) view.setUint8(i, arr[offset + i]);
+  return view.getFloat64(0, littleEndian);
+}
+
+function readUint32(arr, offset, littleEndian) {
+  const buf = new ArrayBuffer(4);
+  const view = new DataView(buf);
+  for (let i = 0; i < 4; i++) view.setUint8(i, arr[offset + i]);
+  return view.getUint32(0, littleEndian);
+}
+
+function parseWKB(arr, offset) {
+  if (offset >= arr.length) return null;
+  const le = arr[offset] === 1; // byte order
+  offset += 1;
+  const wkbType = readUint32(arr, offset, le);
+  offset += 4;
+  const baseType = wkbType & 0xFFFF;
+
+  if (baseType === 3 || baseType === 1003) { // Polygon
+    return parseWKBPolygon(arr, offset, le);
+  } else if (baseType === 6 || baseType === 1006) { // MultiPolygon
+    return parseWKBMultiPolygon(arr, offset, le);
+  }
+  return null;
+}
+
+function parseWKBRing(arr, offset, le) {
+  const numPoints = readUint32(arr, offset, le);
+  offset += 4;
+  const points = [];
+  for (let i = 0; i < numPoints; i++) {
+    const x = readFloat64(arr, offset, le); offset += 8;
+    const y = readFloat64(arr, offset, le); offset += 8;
+    points.push([x, y]);
+  }
+  return { points, offset };
+}
+
+function ringArea(points) {
+  // Shoelace formula
+  let area = 0;
+  const n = points.length;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    area += points[i][0] * points[j][1];
+    area -= points[j][0] * points[i][1];
+  }
+  return Math.abs(area) / 2;
+}
+
+function parseWKBPolygon(arr, offset, le) {
+  const numRings = readUint32(arr, offset, le);
+  offset += 4;
+  let totalArea = 0;
+  for (let r = 0; r < numRings; r++) {
+    const res = parseWKBRing(arr, offset, le);
+    offset = res.offset;
+    const a = ringArea(res.points);
+    if (r === 0) totalArea += a;
+    else totalArea -= a; // huecos
+  }
+  return { area: totalArea, offset };
+}
+
+function parseWKBMultiPolygon(arr, offset, le) {
+  const numPolygons = readUint32(arr, offset, le);
+  offset += 4;
+  let totalArea = 0;
+  for (let p = 0; p < numPolygons; p++) {
+    const le2 = arr[offset] === 1; offset += 1;
+    const wkbType2 = readUint32(arr, offset, le2); offset += 4;
+    const res = parseWKBPolygon(arr, offset, le2);
+    totalArea += res.area;
+    offset = res.offset;
+  }
+  return { area: totalArea, offset };
+}
+
+function calcAreaFromBlob(blob) {
+  try {
+    if (!blob) return null;
+    const arr = new Uint8Array(blob);
+    const parsed = parseGpkgGeom(arr);
+    if (!parsed) return null;
+    return Math.round(parsed.area * 100) / 100;
+  } catch(e) { return null; }
+}
+
+// =====================================================================
+// ESCRIBIR GPKG RESULTADO
+// =====================================================================
+function buildResultGpkg(SQL, mergedData) {
+  const db = new SQL.Database();
+
+  // Crear tablas GPKG mínimas
+  db.run(`PRAGMA application_id = 0x47504b47;`);
+  db.run(`PRAGMA user_version = 10200;`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS gpkg_spatial_ref_sys (
+    srs_name TEXT NOT NULL, srs_id INTEGER NOT NULL PRIMARY KEY,
+    organization TEXT NOT NULL, organization_coordsys_id INTEGER NOT NULL,
+    definition TEXT NOT NULL, description TEXT
+  )`);
+
+  db.run(`INSERT OR IGNORE INTO gpkg_spatial_ref_sys VALUES
+    ('Undefined Cartesian SRS',-1,'NONE',-1,'undefined',''),
+    ('Undefined Geographic SRS',0,'NONE',0,'undefined',''),
+    ('WGS 84 Geographic 2D',4326,'EPSG',4326,'GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433],AUTHORITY["EPSG","4326"]]',''),
+    ('WGS 84 / UTM zone 18S',32718,'EPSG',32718,'PROJCS["WGS 84 / UTM zone 18S",GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4326"]],PROJECTION["Transverse_Mercator"],PARAMETER["latitude_of_origin",0],PARAMETER["central_meridian",-75],PARAMETER["scale_factor",0.9996],PARAMETER["false_easting",500000],PARAMETER["false_northing",10000000],UNIT["metre",1,AUTHORITY["EPSG","9001"]],AXIS["Easting",EAST],AXIS["Northing",NORTH],AUTHORITY["EPSG","32718"]]','')
+  `);
+
+  db.run(`CREATE TABLE IF NOT EXISTS gpkg_contents (
+    table_name TEXT NOT NULL PRIMARY KEY, data_type TEXT NOT NULL,
+    identifier TEXT, description TEXT DEFAULT '',
+    last_change DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    min_x REAL, min_y REAL, max_x REAL, max_y REAL, srs_id INTEGER
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS gpkg_geometry_columns (
+    table_name TEXT NOT NULL, column_name TEXT NOT NULL,
+    geometry_type_name TEXT NOT NULL, srs_id INTEGER NOT NULL,
+    z TINYINT NOT NULL, m TINYINT NOT NULL
+  )`);
+
+  for (const [layerName, layerData] of Object.entries(mergedData)) {
+    if (!layerData || !layerData.rows || layerData.rows.length === 0) continue;
+
+    const fields = layerData.fields; // [{name, type}]
+    const rows = layerData.rows;
+    const geomType = layerData.geomTypeName || 'GEOMETRY';
+
+    // Crear tabla
+    const colDefs = fields.map(f => `"${f.name}" ${f.type || 'TEXT'}`).join(', ');
+    db.run(`CREATE TABLE IF NOT EXISTS "${layerName}" (fid INTEGER PRIMARY KEY AUTOINCREMENT, ${colDefs}, "geom" BLOB)`);
+
+    // Insertar filas
+    const placeholders = fields.map(() => '?').join(', ');
+    const stmt = db.prepare(`INSERT INTO "${layerName}" (${fields.map(f=>`"${f.name}"`).join(',')}, "geom") VALUES (${placeholders}, ?)`);
+    for (const row of rows) {
+      const vals = fields.map(f => row[f.name] !== undefined ? row[f.name] : null);
+      vals.push(row.__geom__ || null);
+      stmt.run(vals);
+    }
+    stmt.free();
+
+    // Registrar en gpkg_contents
+    db.run(`INSERT OR IGNORE INTO gpkg_contents (table_name, data_type, identifier, srs_id) VALUES (?, 'features', ?, 32718)`,
+      [layerName, layerName]);
+    db.run(`INSERT OR IGNORE INTO gpkg_geometry_columns VALUES (?, 'geom', ?, 32718, 0, 0)`,
+      [layerName, geomType]);
+  }
+
+  return db.export();
+}
+
+// =====================================================================
+// GENERAR EXCEL POR CAPA
+// =====================================================================
+function buildExcel(layerName, fields, rows) {
+  const wb = XLSX.utils.book_new();
+  const headers = fields.map(f => f.name);
+  const data = [headers];
+  for (const row of rows) {
+    data.push(headers.map(h => row[h] !== undefined ? row[h] : ''));
+  }
+  const ws = XLSX.utils.aoa_to_sheet(data);
+  // Estilos básicos de encabezado (ancho columnas)
+  ws['!cols'] = headers.map(() => ({ wch: 18 }));
+  XLSX.utils.book_append_sheet(wb, ws, layerName.substring(0, 31));
+  return XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+}
+
+// =====================================================================
+// PROCESAMIENTO PRINCIPAL
+// =====================================================================
+async function procesarAcopio() {
+  const SQL = await initSQL();
+  hideSection('camposSection');
+  showSection('progressSection');
+  $('progressLog').innerHTML = '';
+  setProgress(0);
+
+  const knownLayers = Object.keys(LAYER_CONFIG);
+  // Capas detectadas
+  const allLayers = [...new Set(state.files.flatMap(f => f.layers))];
+  const layersToProcesar = allLayers.filter(l => knownLayers.includes(l));
+
+  log(`📋 Capas a procesar: ${layersToProcesar.join(', ')}`);
+  log(`📦 Archivos fuente: ${state.files.length}`);
+
+  const mergedData = {}; // {layerName: {fields, rows, geomTypeName, duplicates}}
+  const reportRows = [];
+  const allDuplicates = {};
+
+  let step = 0;
+  const totalSteps = state.files.length * layersToProcesar.length + 2;
+
+  for (const layer of layersToProcesar) {
+    const cfg = LAYER_CONFIG[layer];
+    const clavesCfg = cfg.claves;
+    const campoArea = cfg.campoArea;
+    const removedFields = state.fieldRemovals[layer] || new Set();
+
+    let allRows = [];
+    let fieldsInfo = null;
+    let geomTypeName = 'GEOMETRY';
+    const seenKeys = new Map(); // key -> {fname, rowIdx}
+    let dupCount = 0;
+    const dupList = [];
+
+    for (const file of state.files) {
+      if (!file.layers.includes(layer)) {
+        log(`  ⏭️ ${file.name}: no tiene capa ${layer}`, 'warn');
+        step++;
+        setProgress(Math.round(step / totalSteps * 90));
+        continue;
+      }
+
+      try {
+        const db = await readGpkg(file.buffer);
+        const layersMeta = getLayersFromDb(db);
+        const meta = layersMeta.find(l => l.name === layer);
+        const geomCol = meta ? meta.geomCol : 'geom';
+
+        const rawFields = getFieldsFromDb(db, layer);
+        const nonGeomFields = rawFields.filter(f =>
+          f.name.toLowerCase() !== geomCol.toLowerCase() &&
+          f.name.toLowerCase() !== 'fid' &&
+          !removedFields.has(f.name)
+        );
+
+        if (!fieldsInfo) {
+          fieldsInfo = nonGeomFields.map(f => ({ name: f.name, type: f.type }));
+        }
+
+        // Leer con geometría
+        const geomRows = db.exec(`SELECT ${nonGeomFields.map(f=>`"${f.name}"`).join(',')}, "${geomCol}" FROM "${layer}"`);
+        if (!geomRows.length) { db.close(); step++; setProgress(Math.round(step/totalSteps*90)); continue; }
+
+        const colNames = nonGeomFields.map(f => f.name);
+        for (const row of geomRows[0].values) {
+          const obj = {};
+          colNames.forEach((c, i) => { obj[c] = row[i]; });
+          obj.__geom__ = row[row.length - 1]; // blob
+
+          // Calcular área
+          if (campoArea && obj.__geom__) {
+            const area = calcAreaFromBlob(obj.__geom__);
+            if (area !== null) obj[campoArea] = area;
+          } else if (cfg.calcularArea && obj.__geom__) {
+            // tg_manzana no tiene campo area, lo añadimos
+            const area = calcAreaFromBlob(obj.__geom__);
+            if (area !== null) obj['area'] = area;
+          }
+
+          // Detección duplicados
+          const keyParts = clavesCfg.map(k => obj[k] !== undefined ? String(obj[k]) : '?');
+          const key = keyParts.join('|');
+
+          if (seenKeys.has(key)) {
+            dupCount++;
+            const prev = seenKeys.get(key);
+            const dupMsg = `Clave [${key}] → "${prev.fname}" y "${file.name}"`;
+            if (!dupList.includes(dupMsg)) dupList.push(dupMsg);
+            // Conservar de igual modo (no eliminar, solo reportar)
+          } else {
+            seenKeys.set(key, { fname: file.name });
+          }
+          allRows.push(obj);
+        }
+
+        log(`  ✅ ${file.name} → ${layer}: ${geomRows[0].values.length} registros`, 'ok');
+        db.close();
+      } catch(e) {
+        log(`  ❌ ${file.name} → ${layer}: ${e.message}`, 'err');
+      }
+
+      step++;
+      setProgress(Math.round(step / totalSteps * 90));
+    }
+
+    // Si tg_manzana no tenía campo area en el origen, añadirlo a fieldsInfo
+    if (layer === 'tg_manzana' && fieldsInfo && !fieldsInfo.find(f=>f.name==='area') && allRows.some(r=>r.area!==undefined)) {
+      fieldsInfo.push({ name: 'area', type: 'REAL' });
+    }
+
+    if (allRows.length > 0) {
+      mergedData[layer] = {
+        fields: fieldsInfo || [],
+        rows: allRows,
+        geomTypeName,
+        duplicates: dupCount,
+        dupList,
+      };
+    }
+
+    reportRows.push({
+      layer,
+      total: allRows.length,
+      duplicates: dupCount,
+      dupList,
+    });
+
+    if (dupCount > 0) allDuplicates[layer] = dupList;
+  }
+
+  log('🔧 Construyendo GeoPackage fusionado...', '');
+  setProgress(92);
+  await new Promise(r => setTimeout(r, 50));
+
+  const gpkgBytes = buildResultGpkg(SQL, mergedData);
+  log('📊 Generando archivos Excel...', '');
+  setProgress(95);
+  await new Promise(r => setTimeout(r, 50));
+
+  // Solo las capas marcadas con excel:true
+  const layersConExcel = Object.entries(mergedData).filter(([ln]) => LAYER_CONFIG[ln]?.excel);
+
+  const excels = {};
+  for (const [ln, ld] of layersConExcel) {
+    excels[ln] = buildExcel(ln, ld.fields, ld.rows);
+  }
+
+  setProgress(98);
+  log('📦 Empaquetando ZIP...', '');
+  await new Promise(r => setTimeout(r, 50));
+
+  const zip = new JSZip();
+  const fecha = new Date().toISOString().slice(0,10).replace(/-/g,'');
+  zip.file(`acopio_${fecha}.gpkg`, gpkgBytes);
+  for (const [ln, xls] of Object.entries(excels)) {
+    zip.file(`excel/${ln}_${fecha}.xlsx`, xls);
+  }
+
+  const zipBlob = await zip.generateAsync({ type: 'blob' });
+
+  state.resultData = {
+    zipBlob,
+    zipName: `acopio_sig_${fecha}.zip`,
+    reportRows,
+    allDuplicates,
+    totalRegistros: Object.values(mergedData).reduce((s, d) => s + d.rows.length, 0),
+    totalCapas: Object.keys(mergedData).length,
+    totalArchivos: state.files.length,
+  };
+
+  setProgress(100);
+  log('✅ ¡Acopio completado!', 'ok');
+
+  await new Promise(r => setTimeout(r, 400));
+  mostrarReporte();
+}
+
+// =====================================================================
+// MOSTRAR REPORTE
+// =====================================================================
+function mostrarReporte() {
+  hideSection('progressSection');
+  showSection('reportSection');
+
+  const d = state.resultData;
+
+  // Stats
+  $('statsGrid').innerHTML = `
+    <div class="stat-box"><div class="stat-n">${d.totalArchivos}</div><div class="stat-l">Archivos procesados</div></div>
+    <div class="stat-box"><div class="stat-n">${d.totalCapas}</div><div class="stat-l">Capas fusionadas</div></div>
+    <div class="stat-box" style="grid-column:span 2"><div class="stat-n">${d.totalRegistros}</div><div class="stat-l">Registros totales en el acopio</div></div>
+  `;
+
+  // Tabla por capa
+  const tbody = $('reporteBody');
+  tbody.innerHTML = '';
+  for (const r of d.reportRows) {
+    if (r.total === 0) continue;
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td><strong>${r.layer}</strong></td>
+      <td><span class="badge-num">${r.total}</span></td>
+      <td>${r.duplicates > 0
+        ? `<span class="badge-warn">⚠️ ${r.duplicates}</span>`
+        : '<span style="color:var(--verde2)">✅ Ninguno</span>'
+      }</td>
+    `;
+    tbody.appendChild(tr);
+  }
+
+  // Sección duplicados
+  const dupSection = $('dupSection');
+  dupSection.innerHTML = '';
+  if (Object.keys(d.allDuplicates).length > 0) {
+    let html = '<div class="dup-header">⚠️ Detalle de duplicados encontrados</div>';
+    for (const [ln, list] of Object.entries(d.allDuplicates)) {
+      html += `<div style="font-size:0.78rem;font-weight:600;margin:8px 0 4px;color:var(--naranja)">${ln}</div>`;
+      html += `<div class="dup-list">${list.map(d => `• ${d}`).join('<br/>')}</div>`;
+    }
+    dupSection.innerHTML = html;
+  }
+}
+
+// =====================================================================
+// DESCARGAR ZIP
+// =====================================================================
+function descargarZip() {
+  const { zipBlob, zipName } = state.resultData;
+  const url = URL.createObjectURL(zipBlob);
+  const a = document.createElement('a');
+  a.href = url; a.download = zipName;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+// =====================================================================
+// GESTIÓN DE CAMPOS
+// =====================================================================
+let activeLayerTab = null;
+
+function buildCamposUI() {
+  const tabs = $('layerTabs');
+  const grid = $('camposGrid');
+  tabs.innerHTML = ''; grid.innerHTML = '';
+
+  const layers = state.detectedLayers.filter(l => LAYER_CONFIG[l]);
+  if (!layers.length) return;
+
+  activeLayerTab = layers[0];
+
+  for (const ln of layers) {
+    const tab = document.createElement('button');
+    tab.className = 'layer-tab' + (ln === activeLayerTab ? ' active' : '');
+    tab.textContent = ln;
+    tab.onclick = () => {
+      activeLayerTab = ln;
+      document.querySelectorAll('.layer-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      renderCamposGrid(ln);
+    };
+    tabs.appendChild(tab);
+  }
+
+  renderCamposGrid(activeLayerTab);
+}
+
+function renderCamposGrid(layerName) {
+  const grid = $('camposGrid');
+  grid.innerHTML = '';
+  const fields = state.layerFields[layerName] || [];
+  const cfg = LAYER_CONFIG[layerName] || {};
+  const claves = cfg.claves || [];
+  const removed = state.fieldRemovals[layerName] || new Set();
+
+  for (const f of fields) {
+    const esClave = claves.includes(f.name);
+    const esEliminado = removed.has(f.name);
+    const div = document.createElement('div');
+    div.className = 'campo-item' + (esClave ? ' clave' : '') + (esEliminado ? ' eliminado' : '');
+    div.innerHTML = `
+      <span class="cicon">${esClave ? '🔑' : (esEliminado ? '🗑️' : '📋')}</span>
+      <span>${f.name}</span>
+      ${esClave ? '<span class="cbadge">CLAVE</span>' : ''}
+      ${f.name === (cfg.campoArea) && !esClave ? '<span class="cbadge" style="background:var(--verde)">ÁREA</span>' : ''}
+    `;
+    if (!esClave) {
+      div.style.cursor = 'pointer';
+      div.onclick = () => toggleField(layerName, f.name);
+    }
+    grid.appendChild(div);
+  }
+}
+
+function toggleField(layerName, fieldName) {
+  if (!state.fieldRemovals[layerName]) state.fieldRemovals[layerName] = new Set();
+  const s = state.fieldRemovals[layerName];
+  if (s.has(fieldName)) s.delete(fieldName);
+  else s.add(fieldName);
+  renderCamposGrid(layerName);
+}
+
+// =====================================================================
+// CARGA DE ARCHIVOS
+// =====================================================================
+async function handleFiles(newFiles) {
+  const SQL = await initSQL();
+
+  for (const file of newFiles) {
+    if (!file.name.endsWith('.gpkg')) continue;
+    if (state.files.find(f => f.name === file.name)) continue;
+
+    const idx = state.files.length;
+    const item = { name: file.name, size: file.size, buffer: null, layers: [] };
+    state.files.push(item);
+    renderFileList();
+
+    try {
+      const buf = await file.arrayBuffer();
+      item.buffer = buf;
+      const db = new SQL.Database(new Uint8Array(buf));
+      const layers = getLayersFromDb(db);
+      item.layers = layers.map(l => l.name);
+
+      // Recopilar campos por capa
+      for (const l of layers) {
+        if (!LAYER_CONFIG[l.name]) continue;
+        if (!state.layerFields[l.name]) {
+          const fields = getFieldsFromDb(db, l.name).filter(f =>
+            f.name.toLowerCase() !== l.geomCol.toLowerCase() &&
+            f.name.toLowerCase() !== 'fid'
+          );
+          state.layerFields[l.name] = fields;
+        }
+      }
+      db.close();
+      item.status = 'ok';
+    } catch(e) {
+      item.status = 'err';
+      item.error = e.message;
+    }
+    renderFileList();
+  }
+
+  // Actualizar capas detectadas
+  state.detectedLayers = [...new Set(state.files.flatMap(f => f.layers))];
+
+  if (state.files.some(f => f.status === 'ok')) {
+    buildCamposUI();
+    showSection('camposSection');
+  }
+}
+
+function renderFileList() {
+  const list = $('fileList');
+  list.innerHTML = '';
+  for (let i = 0; i < state.files.length; i++) {
+    const f = state.files[i];
+    const div = document.createElement('div');
+    div.className = 'file-item';
+    const statusTxt = f.status === 'ok'
+      ? `<span class="fstatus ok">✅ ${f.layers.length} capas</span>`
+      : f.status === 'err'
+      ? `<span class="fstatus err">❌ Error</span>`
+      : `<span class="fstatus pen">⏳ Leyendo...</span>`;
+    div.innerHTML = `
+      <span class="fname">📦 ${f.name}</span>
+      <span class="fsize">${fmtSize(f.size)}</span>
+      ${statusTxt}
+      <button class="btn-remove" data-idx="${i}" title="Eliminar">✕</button>
+    `;
+    list.appendChild(div);
+  }
+  list.querySelectorAll('.btn-remove').forEach(btn => {
+    btn.onclick = () => {
+      const idx = parseInt(btn.dataset.idx);
+      state.files.splice(idx, 1);
+      state.detectedLayers = [...new Set(state.files.flatMap(f => f.layers))];
+      renderFileList();
+      if (state.files.length === 0) {
+        hideSection('camposSection');
+        state.layerFields = {};
+        state.fieldRemovals = {};
+      } else {
+        buildCamposUI();
+      }
+    };
+  });
+}
+
+// =====================================================================
+// RESET
+// =====================================================================
+function resetApp() {
+  state.files = [];
+  state.fieldRemovals = {};
+  state.layerFields = {};
+  state.detectedLayers = [];
+  state.resultData = null;
+  $('fileList').innerHTML = '';
+  $('progressLog').innerHTML = '';
+  setProgress(0);
+  hideSection('camposSection');
+  hideSection('progressSection');
+  hideSection('reportSection');
+}
+
+// =====================================================================
+// EVENT LISTENERS
+// =====================================================================
+const dropZone = $('dropZone');
+const fileInput = $('fileInput');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('over'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropZone.classList.remove('over');
+  handleFiles([...e.dataTransfer.files]);
+});
+fileInput.addEventListener('change', e => {
+  handleFiles([...e.target.files]);
+  e.target.value = '';
+});
+
+$('btnProcesar').addEventListener('click', () => {
+  if (state.files.filter(f=>f.status==='ok').length === 0) {
+    alert('Carga al menos un .gpkg válido primero.');
+    return;
+  }
+  procesarAcopio();
+});
+
+$('btnDescargar').addEventListener('click', descargarZip);
+$('btnReset').addEventListener('click', resetApp);
+
+// Init SQL en background
+initSQL().catch(console.error);
+</script>
+</body>
+</html>

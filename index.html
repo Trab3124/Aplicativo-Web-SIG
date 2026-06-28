@@ -294,8 +294,7 @@
           <tr>
             <th>Capa</th>
             <th>Registros</th>
-            <th>Duplicados</th>
-            <th>Superposiciones</th>
+            <th>Superposiciones entre acopios</th>
           </tr>
         </thead>
         <tbody id="reporteBody"></tbody>
@@ -537,15 +536,14 @@ function getGeomFromDb(db, table, geomCol, fields) {
 // Equivalente exacto de round($area, 2) en calculadora de atributos QGIS
 // =====================================================================
 
-const _dv = new DataView(new ArrayBuffer(8));
-
+// DataView local en cada llamada — evita corrupción en llamadas recursivas
 function _rf64(b, off, le) {
-  for (let i = 0; i < 8; i++) _dv.setUint8(i, b[off + i]);
-  return _dv.getFloat64(0, le);
+  const dv = new DataView(b.buffer, b.byteOffset + off, 8);
+  return dv.getFloat64(0, le);
 }
 function _ru32(b, off, le) {
-  for (let i = 0; i < 4; i++) _dv.setUint8(i, b[off + i]);
-  return _dv.getUint32(0, le);
+  const dv = new DataView(b.buffer, b.byteOffset + off, 4);
+  return dv.getUint32(0, le);
 }
 
 function _ringArea(b, off, le) {
@@ -603,23 +601,33 @@ function _parseWkb(b, off) {
   return { area: 0, off };
 }
 
+function _toOwnU8(blob) {
+  // Garantiza buffer propio con byteOffset=0 para DataView
+  if (!blob) return null;
+  const src = (blob instanceof Uint8Array) ? blob : new Uint8Array(blob);
+  const dst = new Uint8Array(src.length);
+  dst.set(src);
+  return dst;
+}
+
 function calcAreaFromBlob(blob) {
   try {
-    if (!blob) return null;
-    const b = blob instanceof Uint8Array ? blob : new Uint8Array(blob);
-    if (b.length < 8 || b[0] !== 0x47 || b[1] !== 0x50) return null;
+    const b = _toOwnU8(blob);
+    if (!b || b.length < 8 || b[0] !== 0x47 || b[1] !== 0x50) return null;
     const envSizes = [0, 32, 48, 48, 64];
     const wkbOff = 8 + (envSizes[(b[3] >> 1) & 0x07] || 0);
+    if (wkbOff >= b.length) return null;
     const res = _parseWkb(b, wkbOff);
-    return Math.round(res.area * 100) / 100; // round($area, 2)
+    if (!res || res.area <= 0) return null;
+    return Math.round(res.area * 100) / 100;  // round($area, 2) de QGIS
   } catch(e) { return null; }
 }
 
 // Extraer puntos del exterior del primer polígono (para detección de superposición)
 function extractExteriorRing(blob) {
   try {
-    const b = blob instanceof Uint8Array ? blob : new Uint8Array(blob);
-    if (b.length < 8 || b[0] !== 0x47 || b[1] !== 0x50) return null;
+    const b = _toOwnU8(blob);
+    if (!b || b.length < 8 || b[0] !== 0x47 || b[1] !== 0x50) return null;
     const envSizes = [0, 32, 48, 48, 64];
     let off = 8 + (envSizes[(b[3] >> 1) & 0x07] || 0);
     const le = b[off] === 1; off += 1;
@@ -853,10 +861,11 @@ async function procesarAcopio() {
           colsToRead.forEach((c, i) => { obj[c] = row[i]; });
           obj.__geom__ = row[row.length - 1]; // blob geometría
 
-          // Recalcular área con round($area, 2) si corresponde y no fue eliminada
-          if (campoArea && !removedFields.has(campoArea) && recalcArea && obj.__geom__) {
-            const areaCalc = calcAreaFromBlob(obj.__geom__);
-            obj[campoArea] = areaCalc !== null ? areaCalc : null;
+          // Recalcular área — round($area,2) igual a QGIS
+          // Se ignora el valor original del campo (puede ser NaN) y se recalcula desde geom
+          if (campoArea && !removedFields.has(campoArea) && recalcArea) {
+            const areaCalc = obj.__geom__ ? calcAreaFromBlob(obj.__geom__) : null;
+            obj[campoArea] = (areaCalc !== null && areaCalc > 0) ? areaCalc : null;
           }
 
           // Detección duplicados
@@ -1015,10 +1024,22 @@ function mostrarReporte() {
   const d = state.resultData;
 
   // Stats
+  const totalOverlaps = d.reportRows.reduce((s,r) => s + (r.overlaps||0), 0);
+  const alertaHtml = totalOverlaps > 0
+    ? `<div style="grid-column:span 2;background:#fff3cd;border:1.5px solid var(--naranja);
+         border-radius:8px;padding:10px 14px;font-size:0.83rem;color:#7d4e00;line-height:1.5;">
+        ⚠️ <strong>Se detectaron ${totalOverlaps} superposición(es) entre acopios.</strong><br/>
+        Dos o más técnicos trabajaron sobre la misma zona. Revisa el detalle abajo.
+       </div>`
+    : `<div style="grid-column:span 2;background:#eafaf1;border:1.5px solid var(--verde2);
+         border-radius:8px;padding:10px 14px;font-size:0.83rem;color:#1a5c38;">
+        ✅ <strong>Sin superposiciones detectadas</strong> entre los acopios cargados.
+       </div>`;
   $('statsGrid').innerHTML = `
     <div class="stat-box"><div class="stat-n">${d.totalArchivos}</div><div class="stat-l">Archivos procesados</div></div>
     <div class="stat-box"><div class="stat-n">${d.totalCapas}</div><div class="stat-l">Capas fusionadas</div></div>
     <div class="stat-box" style="grid-column:span 2"><div class="stat-n">${d.totalRegistros}</div><div class="stat-l">Registros totales en el acopio</div></div>
+    ${alertaHtml}
   `;
 
   // Tabla por capa
@@ -1030,13 +1051,9 @@ function mostrarReporte() {
     tr.innerHTML = `
       <td><strong>${r.layer}</strong></td>
       <td><span class="badge-num">${r.total}</span></td>
-      <td>${r.duplicates > 0
-        ? `<span class="badge-warn">⚠️ ${r.duplicates}</span>`
-        : '<span style="color:var(--verde2)">✅ Ninguno</span>'
-      }</td>
       <td>${(r.overlaps || 0) > 0
-        ? `<span class="badge-warn">⚠️ ${r.overlaps}</span>`
-        : '<span style="color:var(--verde2)">✅ Ninguna</span>'
+        ? \`<span class="badge-warn">⚠️ \${r.overlaps} superposición(es)</span>\`
+        : '<span style="color:var(--verde2)">✅ Sin superposiciones</span>'
       }</td>
     `;
     tbody.appendChild(tr);
@@ -1045,15 +1062,12 @@ function mostrarReporte() {
   // Sección duplicados
   const dupSection = $('dupSection');
   dupSection.innerHTML = '';
-  if (Object.keys(d.allDuplicates).length > 0) {
-    let html = '<div class="dup-header">⚠️ Detalle de incidencias encontradas</div>';
-    for (const [ln, list] of Object.entries(d.allDuplicates)) {
-      const isOverlap = ln.endsWith('_overlap');
-      const label = isOverlap
-        ? `🔺 Superposiciones en ${ln.replace('_overlap','')}:`
-        : `🔑 Duplicados en ${ln}:`;
-      html += `<div style="font-size:0.78rem;font-weight:600;margin:8px 0 4px;color:var(--naranja)">${label}</div>`;
-      html += `<div class="dup-list">${list.map(d => `• ${d}`).join('<br/>')}</div>`;
+  const overlapEntries = Object.entries(d.allDuplicates).filter(([k]) => k.endsWith('_overlap'));
+  if (overlapEntries.length > 0) {
+    let html = '<div class="dup-header">🔺 Detalle de superposiciones entre acopios</div>';
+    for (const [ln, list] of overlapEntries) {
+      html += `<div style="font-size:0.78rem;font-weight:600;margin:8px 0 4px;color:var(--naranja)">Capa ${ln.replace('_overlap','')}:</div>`;
+      html += `<div class="dup-list">${list.map(item => `• ${item}`).join('<br/>')}</div>`;
     }
     dupSection.innerHTML = html;
   }

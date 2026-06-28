@@ -82,7 +82,7 @@
   #dropZone .icon { font-size: 2.4rem; margin-bottom: 10px; }
   #dropZone p { font-size: 0.88rem; color: #5a7080; line-height: 1.5; }
   #dropZone strong { color: var(--azul); }
-  #fileInput { display: none; }
+  /* fileInput ocultado inline para compatibilidad iOS */
 
   /* LISTA DE ARCHIVOS */
   #fileList { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
@@ -244,12 +244,12 @@
   <div class="card">
     <div class="card-header">📂 Paso 1 — Cargar archivos .gpkg</div>
     <div class="card-body">
-      <div id="dropZone">
+      <label id="dropZone" for="fileInput" style="display:block;cursor:pointer;">
         <div class="icon">📦</div>
         <p>Toca aquí para seleccionar tus archivos <strong>.gpkg</strong><br/>
         Puedes seleccionar varios a la vez</p>
-      </div>
-      <input type="file" id="fileInput" accept=".gpkg" multiple/>
+      </label>
+      <input type="file" id="fileInput" accept=".gpkg" multiple style="display:none;position:absolute;width:1px;height:1px;opacity:0;"/>
       <div id="fileList"></div>
     </div>
   </div>
@@ -1276,37 +1276,41 @@ function resetApp() {
 }
 
 // =====================================================================
-// EVENT LISTENERS
+// EVENT LISTENERS — dentro de DOMContentLoaded para Safari/iPhone
 // =====================================================================
-const dropZone = $('dropZone');
-const fileInput = $('fileInput');
+document.addEventListener('DOMContentLoaded', () => {
+  const dropZone = $('dropZone');
+  const fileInput = $('fileInput');
 
-dropZone.addEventListener('click', () => fileInput.click());
-dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('over'); });
-dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
-dropZone.addEventListener('drop', e => {
-  e.preventDefault();
-  dropZone.classList.remove('over');
-  handleFiles([...e.dataTransfer.files]);
+  // El <label for="fileInput"> maneja el click nativamente en iOS/Safari
+  // El listener JS es solo fallback para drag & drop en desktop
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); });  // placeholder
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('over');
+    handleFiles([...e.dataTransfer.files]);
+  });
+  fileInput.addEventListener('change', e => {
+    handleFiles([...e.target.files]);
+    e.target.value = '';
+  });
+
+  $('btnProcesar').addEventListener('click', () => {
+    if (state.files.filter(f=>f.status==='ok').length === 0) {
+      alert('Carga al menos un .gpkg válido primero.');
+      return;
+    }
+    procesarAcopio();
+  });
+
+  $('btnDescargar').addEventListener('click', descargarZip);
+  $('btnReset').addEventListener('click', resetApp);
+
+  // Init SQL en background
+  initSQL().catch(console.error);
 });
-fileInput.addEventListener('change', e => {
-  handleFiles([...e.target.files]);
-  e.target.value = '';
-});
-
-$('btnProcesar').addEventListener('click', () => {
-  if (state.files.filter(f=>f.status==='ok').length === 0) {
-    alert('Carga al menos un .gpkg válido primero.');
-    return;
-  }
-  procesarAcopio();
-});
-
-$('btnDescargar').addEventListener('click', descargarZip);
-$('btnReset').addEventListener('click', resetApp);
-
-// Init SQL en background
-initSQL().catch(console.error);
 </script>
 </body>
 </html>

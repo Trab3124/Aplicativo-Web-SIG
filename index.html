@@ -82,7 +82,7 @@
   #dropZone .icon { font-size: 2.4rem; margin-bottom: 10px; }
   #dropZone p { font-size: 0.88rem; color: #5a7080; line-height: 1.5; }
   #dropZone strong { color: var(--azul); }
-  #fileInput { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
+  #fileInput { display: none; }
 
   /* LISTA DE ARCHIVOS */
   #fileList { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
@@ -244,11 +244,11 @@
   <div class="card">
     <div class="card-header">📂 Paso 1 — Cargar archivos .gpkg</div>
     <div class="card-body">
-      <label id="dropZone" for="fileInput" style="display:block;cursor:pointer;">
+      <div id="dropZone">
         <div class="icon">📦</div>
         <p>Toca aquí para seleccionar tus archivos <strong>.gpkg</strong><br/>
         Puedes seleccionar varios a la vez</p>
-      </label>
+      </div>
       <input type="file" id="fileInput" accept=".gpkg" multiple/>
       <div id="fileList"></div>
     </div>
@@ -294,7 +294,7 @@
           <tr>
             <th>Capa</th>
             <th>Registros totales</th>
-            <th>Superposiciones entre acopios</th>
+            <th>Duplicados</th>
           </tr>
         </thead>
         <tbody id="reporteBody"></tbody>
@@ -319,90 +319,15 @@
 // CONFIGURACIÓN DE CAPAS
 // =====================================================================
 const LAYER_CONFIG = {
-  // camposOrden: orden exacto de campos en el gpkg final
-  // recalcularArea: true = siempre recalcular desde geometría (round($area,2) de QGIS)
-  // campoArea: nombre del campo área a crear si no existe
-  // opcionales: fid y area (togglables); el resto son obligatorios
-  tg_lote: {
-    camposOrden:    ['fid','ubigeo','cod_sector','cod_mzna','cod_lote','area'],
-    claves:         ['ubigeo','cod_sector','cod_mzna','cod_lote'],
-    campoArea:      'area',
-    recalcularArea: true,
-    tipoGeom:       'polygon',
-    excel:          true,
-    excelNombre:    'tg_lote',
-  },
-  tg_manzana: {
-    camposOrden:    ['fid','ubigeo','cod_sector','cod_mzna','area'],
-    claves:         ['ubigeo','cod_sector','cod_mzna'],
-    campoArea:      'area',
-    recalcularArea: true,
-    tipoGeom:       'polygon',
-    excel:          false,
-  },
-  tg_edifica: {
-    camposOrden:    ['fid','ubigeo','cod_sector','cod_mzna','cod_lote','cod_edific','area'],
-    claves:         ['ubigeo','cod_sector','cod_mzna','cod_lote','cod_edific'],
-    campoArea:      'area',
-    recalcularArea: true,
-    tipoGeom:       'polygon',
-    excel:          true,
-    excelNombre:    'tg_edifica',
-  },
-  tg_construccion: {
-    camposOrden:    ['fid','ubigeo','cod_sector','cod_mzna','cod_lote','cod_edific','cod_piso','area'],
-    claves:         ['ubigeo','cod_sector','cod_mzna','cod_lote','cod_edific','cod_piso'],
-    campoArea:      'area',
-    recalcularArea: true,
-    tipoGeom:       'polygon',
-    excel:          true,
-    excelNombre:    'tg_construccion',
-  },
-  tg_construccion_2: {
-    camposOrden:    ['fid','ubigeo','cod_sector','cod_mzna','cod_lote','cod_edific','cod_piso','categoria','area'],
-    claves:         ['ubigeo','cod_sector','cod_mzna','cod_lote','cod_edific','cod_piso','categoria'],
-    campoArea:      'area',
-    recalcularArea: true,
-    tipoGeom:       'polygon',
-    excel:          true,
-    excelNombre:    'tg_construccion_2',
-  },
-  tg_puerta: {
-    camposOrden:    ['fid','ubigeo','cod_sector','cod_mzna','cod_lote','tipo','num_munici','orden'],
-    claves:         ['ubigeo','cod_sector','cod_mzna','cod_lote','tipo','num_munici','orden'],
-    campoArea:      null,
-    recalcularArea: false,
-    tipoGeom:       'point',
-    excel:          true,
-    excelNombre:    'tg_puerta',
-  },
-  obras_complementarias_1: {
-    camposOrden:    ['fid','tipo','cod_sector','cod_mzna','UCA','area'],
-    claves:         ['tipo','cod_sector','cod_mzna','UCA'],
-    campoArea:      'area',
-    recalcularArea: true,
-    tipoGeom:       'polygon',
-    opcional:       true,
-    excel:          false,
-  },
-  obras_complementarias_2: {
-    camposOrden:    ['fid','tipo','cod_sector','cod_mzna','UCA','perimetro'],
-    claves:         ['tipo','cod_sector','cod_mzna','UCA'],
-    campoArea:      'perimetro',
-    recalcularArea: false,
-    tipoGeom:       'line',
-    opcional:       true,
-    excel:          false,
-  },
-  obras_complementarias_3: {
-    camposOrden:    ['fid','tipo','cod_sector','cod_mzna','UCA'],
-    claves:         ['tipo','cod_sector','cod_mzna','UCA'],
-    campoArea:      null,
-    recalcularArea: false,
-    tipoGeom:       'point',
-    opcional:       true,
-    excel:          false,
-  },
+  tg_lote:           { claves: ['cod_sector','cod_mzna','cod_lote'],                                      campoArea: 'area', tipoGeom: 'polygon', excel: true },
+  tg_manzana:        { claves: ['cod_sector','cod_mzna'],                                                 campoArea: null,   tipoGeom: 'polygon', calcularArea: true, excel: false },
+  tg_edifica:        { claves: ['cod_sector','cod_mzna','cod_lote','cod_edific'],                          campoArea: 'area', tipoGeom: 'polygon', excel: true },
+  tg_construccion:   { claves: ['cod_sector','cod_mzna','cod_lote','cod_edific','cod_piso'],               campoArea: 'area', tipoGeom: 'polygon', excel: true },
+  tg_construccion_2: { claves: ['cod_sector','cod_mzna','cod_lote','cod_edific','cod_piso','categoria'],   campoArea: 'area', tipoGeom: 'polygon', excel: true },
+  tg_puerta:         { claves: ['cod_sector','cod_mzna','cod_lote','orden','tipo','num_munici'],           campoArea: null,   tipoGeom: 'point',   excel: true },
+  obras_complementarias_1: { claves: ['cod_sector','cod_mzna'],                                           campoArea: 'area', tipoGeom: 'polygon', opcional: true, excel: false },
+  obras_complementarias_2: { claves: ['cod_sector','cod_mzna'],                                           campoArea: 'perimetro', tipoGeom: 'line', opcional: true, excel: false },
+  obras_complementarias_3: { claves: ['cod_sector','cod_mzna'],                                           campoArea: null,   tipoGeom: 'point',   opcional: true, excel: false },
 };
 
 // Estado global
@@ -532,212 +457,180 @@ function getGeomFromDb(db, table, geomCol, fields) {
 }
 
 // =====================================================================
-// PARSEO WKB — equivalente a round($area,2) de QGIS · DataView local
+// PARSEO WKB (área desde geometría GPKG)
 // =====================================================================
-function _wkbU8(blob) {
-  const src = (blob instanceof Uint8Array) ? blob : new Uint8Array(blob);
-  const dst = new Uint8Array(src.length); dst.set(src); return dst;
-}
-function _rf64(b,off,le){ return new DataView(b.buffer,off,8).getFloat64(0,le); }
-function _ru32(b,off,le){ return new DataView(b.buffer,off,4).getUint32(0,le); }
+// GeoPackage geometría = header GPKG + WKB estándar
+// Para calcular área en JS desde WKB de polígono en UTM
 
-function _ringArea(b,off,le) {
-  const n=_ru32(b,off,le); off+=4; if(!n) return{area:0,off};
-  let x0=_rf64(b,off,le),y0=_rf64(b,off+8,le); off+=16;
-  const sx=x0,sy=y0; let area=0;
-  for(let i=1;i<n;i++){
-    const x1=_rf64(b,off,le),y1=_rf64(b,off+8,le); off+=16;
-    area+=x0*y1-x1*y0; x0=x1; y0=y1;
-  }
-  area+=x0*sy-sx*y0;
-  return{area:Math.abs(area)/2,off};
+function parseGpkgGeom(blob) {
+  // blob es Uint8Array con header GPKG + WKB
+  if (!blob || blob.length < 8) return null;
+  // Magic GP = 0x4750, version, flags, srs_id
+  const magic = (blob[0] << 8) | blob[1];
+  if (magic !== 0x4750) return null;
+  const flags = blob[3];
+  const envelopeCode = (flags >> 1) & 0x07;
+  const envelopeSizes = [0, 32, 48, 48, 64];
+  const envSize = envelopeSizes[envelopeCode] || 0;
+  const wkbOffset = 8 + envSize;
+  if (wkbOffset >= blob.length) return null;
+  return parseWKB(blob, wkbOffset);
 }
-function _polyBody(b,off,le){
-  const nr=_ru32(b,off,le); off+=4; let tot=0;
-  for(let r=0;r<nr;r++){const res=_ringArea(b,off,le);off=res.off;tot+=(r===0)?res.area:-res.area;}
-  return{area:tot,off};
+
+function readFloat64(arr, offset, littleEndian) {
+  const buf = new ArrayBuffer(8);
+  const view = new DataView(buf);
+  for (let i = 0; i < 8; i++) view.setUint8(i, arr[offset + i]);
+  return view.getFloat64(0, littleEndian);
 }
-function _wkbParse(b,off){
-  const le=b[off]===1; off+=1;
-  const wt=_ru32(b,off,le)&0xFFFF; off+=4;
-  if(wt===3) return _polyBody(b,off,le);
-  if(wt===6){
-    const np=_ru32(b,off,le); off+=4; let tot=0;
-    for(let p=0;p<np;p++){
-      const le2=b[off]===1; off+=1; _ru32(b,off,le2); off+=4;
-      const res=_polyBody(b,off,le2); tot+=res.area; off=res.off;
-    }
-    return{area:tot,off};
-  }
-  if(wt===7){
-    const nc=_ru32(b,off,le); off+=4; let tot=0;
-    for(let c=0;c<nc;c++){const res=_wkbParse(b,off);tot+=res.area;off=res.off;}
-    return{area:tot,off};
-  }
-  return{area:0,off};
+
+function readUint32(arr, offset, littleEndian) {
+  const buf = new ArrayBuffer(4);
+  const view = new DataView(buf);
+  for (let i = 0; i < 4; i++) view.setUint8(i, arr[offset + i]);
+  return view.getUint32(0, littleEndian);
 }
+
+function parseWKB(arr, offset) {
+  if (offset >= arr.length) return null;
+  const le = arr[offset] === 1; // byte order
+  offset += 1;
+  const wkbType = readUint32(arr, offset, le);
+  offset += 4;
+  const baseType = wkbType & 0xFFFF;
+
+  if (baseType === 3 || baseType === 1003) { // Polygon
+    return parseWKBPolygon(arr, offset, le);
+  } else if (baseType === 6 || baseType === 1006) { // MultiPolygon
+    return parseWKBMultiPolygon(arr, offset, le);
+  }
+  return null;
+}
+
+function parseWKBRing(arr, offset, le) {
+  const numPoints = readUint32(arr, offset, le);
+  offset += 4;
+  const points = [];
+  for (let i = 0; i < numPoints; i++) {
+    const x = readFloat64(arr, offset, le); offset += 8;
+    const y = readFloat64(arr, offset, le); offset += 8;
+    points.push([x, y]);
+  }
+  return { points, offset };
+}
+
+function ringArea(points) {
+  // Shoelace formula
+  let area = 0;
+  const n = points.length;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    area += points[i][0] * points[j][1];
+    area -= points[j][0] * points[i][1];
+  }
+  return Math.abs(area) / 2;
+}
+
+function parseWKBPolygon(arr, offset, le) {
+  const numRings = readUint32(arr, offset, le);
+  offset += 4;
+  let totalArea = 0;
+  for (let r = 0; r < numRings; r++) {
+    const res = parseWKBRing(arr, offset, le);
+    offset = res.offset;
+    const a = ringArea(res.points);
+    if (r === 0) totalArea += a;
+    else totalArea -= a; // huecos
+  }
+  return { area: totalArea, offset };
+}
+
+function parseWKBMultiPolygon(arr, offset, le) {
+  const numPolygons = readUint32(arr, offset, le);
+  offset += 4;
+  let totalArea = 0;
+  for (let p = 0; p < numPolygons; p++) {
+    const le2 = arr[offset] === 1; offset += 1;
+    const wkbType2 = readUint32(arr, offset, le2); offset += 4;
+    const res = parseWKBPolygon(arr, offset, le2);
+    totalArea += res.area;
+    offset = res.offset;
+  }
+  return { area: totalArea, offset };
+}
+
 function calcAreaFromBlob(blob) {
   try {
-    if(!blob) return null;
-    const b=_wkbU8(blob);
-    if(b.length<8||b[0]!==0x47||b[1]!==0x50) return null;
-    const envSz=[0,32,48,48,64];
-    const wOff=8+(envSz[(b[3]>>1)&0x07]||0);
-    if(wOff>=b.length) return null;
-    const res=_wkbParse(b,wOff);
-    if(!res||res.area<=0) return null;
-    return Math.round(res.area*100)/100;
-  } catch(e){ return null; }
+    if (!blob) return null;
+    const arr = new Uint8Array(blob);
+    const parsed = parseGpkgGeom(arr);
+    if (!parsed) return null;
+    return Math.round(parsed.area * 100) / 100;
+  } catch(e) { return null; }
 }
-
-// Extrae anillo exterior para detección de superposición
-function extractRingForOverlap(blob) {
-  try {
-    const b=_wkbU8(blob);
-    if(!b||b.length<8||b[0]!==0x47||b[1]!==0x50) return null;
-    const envSz=[0,32,48,48,64];
-    let off=8+(envSz[(b[3]>>1)&0x07]||0);
-    const le=b[off]===1; off+=1;
-    let wt=_ru32(b,off,le)&0xFFFF; off+=4;
-    if(wt===6){ _ru32(b,off,le); off+=4; const le2=b[off]===1; off+=1; _ru32(b,off,le2); off+=4; wt=3; const nr=_ru32(b,off,le2); off+=4; if(!nr) return null; const n=_ru32(b,off,le2); off+=4; const pts=[]; for(let i=0;i<n;i++){pts.push([_rf64(b,off,le2),_rf64(b,off+8,le2)]);off+=16;} return pts; }
-    if(wt===3){ const nr=_ru32(b,off,le); off+=4; if(!nr) return null; const n=_ru32(b,off,le); off+=4; const pts=[]; for(let i=0;i<n;i++){pts.push([_rf64(b,off,le),_rf64(b,off+8,le)]);off+=16;} return pts; }
-    return null;
-  } catch(e){ return null; }
-}
-function _bboxOf(pts){let x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;for(const[x,y]of pts){if(x<x0)x0=x;if(x>x1)x1=x;if(y<y0)y0=y;if(y>y1)y1=y;}return{x0,y0,x1,y1};}
-function _bboxOv(a,b){return a.x0<b.x1&&a.x1>b.x0&&a.y0<b.y1&&a.y1>b.y0;}
-function _ptIn(pt,poly){const[px,py]=pt;let ins=false;for(let i=0,j=poly.length-1;i<poly.length;j=i++){const[xi,yi]=poly[i],[xj,yj]=poly[j];if(((yi>py)!==(yj>py))&&(px<(xj-xi)*(py-yi)/(yj-yi)+xi))ins=!ins;}return ins;}
-function polysOverlap(a,b){if(!a||!b)return false;if(!_bboxOv(_bboxOf(a),_bboxOf(b)))return false;for(const p of a)if(_ptIn(p,b))return true;for(const p of b)if(_ptIn(p,a))return true;return false;}
 
 // =====================================================================
-// ESCRIBIR GPKG RESULTADO — compatible con QGIS
+// ESCRIBIR GPKG RESULTADO
 // =====================================================================
 function buildResultGpkg(SQL, mergedData) {
   const db = new SQL.Database();
 
-  db.run(`PRAGMA application_id=1196444487;`);
-  db.run(`PRAGMA user_version=10400;`);
+  // Crear tablas GPKG mínimas
+  db.run(`PRAGMA application_id = 0x47504b47;`);
+  db.run(`PRAGMA user_version = 10200;`);
 
-  db.run(`CREATE TABLE gpkg_spatial_ref_sys(
-    srs_name TEXT NOT NULL,srs_id INTEGER NOT NULL PRIMARY KEY,
-    organization TEXT NOT NULL,organization_coordsys_id INTEGER NOT NULL,
-    definition TEXT NOT NULL,description TEXT)`);
-  db.run(`INSERT INTO gpkg_spatial_ref_sys VALUES
+  db.run(`CREATE TABLE IF NOT EXISTS gpkg_spatial_ref_sys (
+    srs_name TEXT NOT NULL, srs_id INTEGER NOT NULL PRIMARY KEY,
+    organization TEXT NOT NULL, organization_coordsys_id INTEGER NOT NULL,
+    definition TEXT NOT NULL, description TEXT
+  )`);
+
+  db.run(`INSERT OR IGNORE INTO gpkg_spatial_ref_sys VALUES
     ('Undefined Cartesian SRS',-1,'NONE',-1,'undefined',''),
-    ('Undefined geographic SRS',0,'NONE',0,'undefined',''),
-    ('WGS 84 geodetic',4326,'EPSG',4326,'GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433]]',''),
-    ('WGS 84 / UTM zone 18S',32718,'EPSG',32718,'PROJCS["WGS 84 / UTM zone 18S",GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4326"]],PROJECTION["Transverse_Mercator"],PARAMETER["latitude_of_origin",0],PARAMETER["central_meridian",-75],PARAMETER["scale_factor",0.9996],PARAMETER["false_easting",500000],PARAMETER["false_northing",10000000],UNIT["metre",1,AUTHORITY["EPSG","9001"]],AXIS["Easting",EAST],AXIS["Northing",NORTH],AUTHORITY["EPSG","32718"]]','')`);
+    ('Undefined Geographic SRS',0,'NONE',0,'undefined',''),
+    ('WGS 84 Geographic 2D',4326,'EPSG',4326,'GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433],AUTHORITY["EPSG","4326"]]',''),
+    ('WGS 84 / UTM zone 18S',32718,'EPSG',32718,'PROJCS["WGS 84 / UTM zone 18S",GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4326"]],PROJECTION["Transverse_Mercator"],PARAMETER["latitude_of_origin",0],PARAMETER["central_meridian",-75],PARAMETER["scale_factor",0.9996],PARAMETER["false_easting",500000],PARAMETER["false_northing",10000000],UNIT["metre",1,AUTHORITY["EPSG","9001"]],AXIS["Easting",EAST],AXIS["Northing",NORTH],AUTHORITY["EPSG","32718"]]','')
+  `);
 
-  db.run(`CREATE TABLE gpkg_contents(
-    table_name TEXT NOT NULL PRIMARY KEY,data_type TEXT NOT NULL,
-    identifier TEXT UNIQUE,description TEXT DEFAULT '',
-    last_change DATETIME NOT NULL DEFAULT(strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-    min_x DOUBLE,min_y DOUBLE,max_x DOUBLE,max_y DOUBLE,srs_id INTEGER)`);
-  db.run(`CREATE TABLE gpkg_geometry_columns(
-    table_name TEXT NOT NULL,column_name TEXT NOT NULL,
-    geometry_type_name TEXT NOT NULL,srs_id INTEGER NOT NULL,
-    z TINYINT NOT NULL,m TINYINT NOT NULL,
-    CONSTRAINT pk_geom_cols PRIMARY KEY(table_name,column_name),
-    CONSTRAINT uk_gc_table_name UNIQUE(table_name))`);
-  db.run(`CREATE TABLE gpkg_extensions(
-    table_name TEXT,column_name TEXT,extension_name TEXT NOT NULL,
-    definition TEXT NOT NULL,scope TEXT NOT NULL,
-    CONSTRAINT ge_tce UNIQUE(table_name,column_name,extension_name))`);
-  db.run(`CREATE TABLE gpkg_ogr_contents(
-    table_name TEXT NOT NULL PRIMARY KEY,feature_count INTEGER DEFAULT NULL)`);
-  db.run(`CREATE TABLE gpkg_metadata(
-    id INTEGER CONSTRAINT m_pk PRIMARY KEY ASC NOT NULL,
-    md_scope TEXT NOT NULL DEFAULT 'dataset',
-    md_standard_uri TEXT NOT NULL,mime_type TEXT NOT NULL DEFAULT 'text/xml',
-    metadata TEXT NOT NULL DEFAULT '')`);
-  db.run(`CREATE TABLE gpkg_metadata_reference(
-    reference_scope TEXT NOT NULL,table_name TEXT,column_name TEXT,
-    row_id_value INTEGER,
-    timestamp DATETIME NOT NULL DEFAULT(strftime('%Y-%m-%dT%H:%M:%fZ','now')),
-    md_file_id INTEGER NOT NULL,md_parent_id INTEGER)`);
-  db.run(`CREATE TABLE gpkg_tile_matrix_set(
-    table_name TEXT NOT NULL PRIMARY KEY,srs_id INTEGER NOT NULL,
-    min_x DOUBLE NOT NULL,min_y DOUBLE NOT NULL,
-    max_x DOUBLE NOT NULL,max_y DOUBLE NOT NULL)`);
-  db.run(`CREATE TABLE gpkg_tile_matrix(
-    table_name TEXT NOT NULL,zoom_level INTEGER NOT NULL,
-    matrix_width INTEGER NOT NULL,matrix_height INTEGER NOT NULL,
-    tile_width INTEGER NOT NULL,tile_height INTEGER NOT NULL,
-    pixel_x_size DOUBLE NOT NULL,pixel_y_size DOUBLE NOT NULL,
-    CONSTRAINT pk_ttm PRIMARY KEY(table_name,zoom_level))`);
+  db.run(`CREATE TABLE IF NOT EXISTS gpkg_contents (
+    table_name TEXT NOT NULL PRIMARY KEY, data_type TEXT NOT NULL,
+    identifier TEXT, description TEXT DEFAULT '',
+    last_change DATETIME NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    min_x REAL, min_y REAL, max_x REAL, max_y REAL, srs_id INTEGER
+  )`);
 
-  const geomTypeMap = {polygon:'MULTIPOLYGON',line:'MULTILINESTRING',point:'POINT'};
+  db.run(`CREATE TABLE IF NOT EXISTS gpkg_geometry_columns (
+    table_name TEXT NOT NULL, column_name TEXT NOT NULL,
+    geometry_type_name TEXT NOT NULL, srs_id INTEGER NOT NULL,
+    z TINYINT NOT NULL, m TINYINT NOT NULL
+  )`);
 
   for (const [layerName, layerData] of Object.entries(mergedData)) {
     if (!layerData || !layerData.rows || layerData.rows.length === 0) continue;
-    const fields   = layerData.fields;
-    const rows     = layerData.rows;
-    const cfg      = LAYER_CONFIG[layerName];
-    const geomType = geomTypeMap[cfg?.tipoGeom] || 'GEOMETRY';
 
-    // Crear tabla de datos
-    const colDefs = fields.map(f => `"${f.name}" ${f.type||'TEXT'}`).join(', ');
-    db.run(`CREATE TABLE "${layerName}"(fid INTEGER PRIMARY KEY AUTOINCREMENT,${colDefs},"geom" BLOB)`);
+    const fields = layerData.fields; // [{name, type}]
+    const rows = layerData.rows;
+    const geomType = layerData.geomTypeName || 'GEOMETRY';
 
-    // Insertar filas y calcular bbox
-    const ph   = fields.map(()=>'?').join(',');
-    const cols = fields.map(f=>`"${f.name}"`).join(',');
-    const stmt = db.prepare(`INSERT INTO "${layerName}"(${cols},"geom") VALUES(${ph},?)`);
-    let bx0=Infinity,by0=Infinity,bx1=-Infinity,by1=-Infinity;
+    // Crear tabla
+    const colDefs = fields.map(f => `"${f.name}" ${f.type || 'TEXT'}`).join(', ');
+    db.run(`CREATE TABLE IF NOT EXISTS "${layerName}" (fid INTEGER PRIMARY KEY AUTOINCREMENT, ${colDefs}, "geom" BLOB)`);
+
+    // Insertar filas
+    const placeholders = fields.map(() => '?').join(', ');
+    const stmt = db.prepare(`INSERT INTO "${layerName}" (${fields.map(f=>`"${f.name}"`).join(',')}, "geom") VALUES (${placeholders}, ?)`);
     for (const row of rows) {
       const vals = fields.map(f => row[f.name] !== undefined ? row[f.name] : null);
       vals.push(row.__geom__ || null);
       stmt.run(vals);
-      // Calcular bbox para gpkg_contents
-      if (row.__geom__) {
-        try {
-          const arr = new Uint8Array(row.__geom__);
-          if (arr[0]===0x47 && arr[1]===0x50) {
-            const envSizes=[0,32,48,48,64];
-            const eOff=8+(envSizes[(arr[3]>>1)&0x07]||0);
-            const dv=new DataView(arr.buffer,arr.byteOffset+eOff);
-            const le=arr[eOff]===1;
-            // Leer primer punto del primer anillo para bbox aproximado
-            // wkbtype(4) + numRings(4) + numPoints(4) + x(8) + y(8)
-            const pt=(arr[eOff]&0xFF)===1;
-            // Solo necesitamos minx/miny/maxx/maxy del envelope si existe
-            const ec=(arr[3]>>1)&0x07;
-            if (ec>=1) {
-              // El envelope está en bytes 8..8+envSize
-              const edv=new DataView(arr.buffer,arr.byteOffset+8);
-              const eLE=(arr[3]&1)===0; // envelope byte order del header
-              const mnx=edv.getFloat64(0,true),mxx=edv.getFloat64(8,true);
-              const mny=edv.getFloat64(16,true),mxy=edv.getFloat64(24,true);
-              if(mnx<bx0)bx0=mnx; if(mxx>bx1)bx1=mxx;
-              if(mny<by0)by0=mny; if(mxy>by1)by1=mxy;
-            }
-          }
-        } catch(e2){}
-      }
     }
     stmt.free();
 
-    const bbox=[isFinite(bx0)?bx0:null,isFinite(by0)?by0:null,
-                isFinite(bx1)?bx1:null,isFinite(by1)?by1:null];
-
-    db.run(`INSERT INTO gpkg_contents(table_name,data_type,identifier,description,last_change,min_x,min_y,max_x,max_y,srs_id)
-            VALUES(?,?,?,?,strftime('%Y-%m-%dT%H:%M:%fZ','now'),?,?,?,?,32718)`,
-           [layerName,layerName,'features','', ...bbox]);
-    db.run(`INSERT INTO gpkg_geometry_columns VALUES(?,?,?,32718,0,0)`,[layerName,'geom',geomType]);
-    db.run(`INSERT INTO gpkg_ogr_contents VALUES(?,?)`,[layerName,rows.length]);
-    db.run(`INSERT INTO gpkg_extensions VALUES(?,?,?,?,?)`,
-           [layerName,'geom','gpkg_rtree_index',
-            'http://www.geopackage.org/spec120/#extension_rtree_index','write-only']);
-
-    // Triggers de conteo (SQLite puro, sin SpatiaLite)
-    db.run(`CREATE TRIGGER "trigger_insert_feature_count_${layerName}"
-      AFTER INSERT ON "${layerName}" BEGIN
-        UPDATE gpkg_ogr_contents SET feature_count=feature_count+1 WHERE table_name='${layerName}';
-      END`);
-    db.run(`CREATE TRIGGER "trigger_delete_feature_count_${layerName}"
-      AFTER DELETE ON "${layerName}" BEGIN
-        UPDATE gpkg_ogr_contents SET feature_count=feature_count-1 WHERE table_name='${layerName}';
-      END`);
+    // Registrar en gpkg_contents
+    db.run(`INSERT OR IGNORE INTO gpkg_contents (table_name, data_type, identifier, srs_id) VALUES (?, 'features', ?, 32718)`,
+      [layerName, layerName]);
+    db.run(`INSERT OR IGNORE INTO gpkg_geometry_columns VALUES (?, 'geom', ?, 32718, 0, 0)`,
+      [layerName, geomType]);
   }
 
   return db.export();
@@ -788,16 +681,13 @@ async function procesarAcopio() {
   for (const layer of layersToProcesar) {
     const cfg = LAYER_CONFIG[layer];
     const clavesCfg = cfg.claves;
-    const campoArea    = cfg.campoArea;      // nombre del campo área
-    const recalcArea   = cfg.recalcularArea; // siempre recalcular desde geom
-    const camposOrden  = cfg.camposOrden || [];
+    const campoArea = cfg.campoArea;
     const removedFields = state.fieldRemovals[layer] || new Set();
-    // Campos finales respetando orden definido, excluyendo los eliminados por usuario
-    const camposFinales = camposOrden.filter(c => !removedFields.has(c));
 
     let allRows = [];
+    let fieldsInfo = null;
     let geomTypeName = 'GEOMETRY';
-    const seenKeys = new Map();
+    const seenKeys = new Map(); // key -> {fname, rowIdx}
     let dupCount = 0;
     const dupList = [];
 
@@ -815,48 +705,50 @@ async function procesarAcopio() {
         const meta = layersMeta.find(l => l.name === layer);
         const geomCol = meta ? meta.geomCol : 'geom';
 
-        // Campos reales que existen en este archivo
         const rawFields = getFieldsFromDb(db, layer);
-        const rawNames = new Set(rawFields.map(f => f.name.toLowerCase()));
-
-        // Columnas a leer: camposFinales que existen en el archivo (excepto area que puede no existir)
-        const colsToRead = camposFinales.filter(c =>
-          c !== (campoArea) &&           // area se calcula, no se lee
-          c.toLowerCase() !== 'fid' &&   // fid se excluye de lectura
-          rawNames.has(c.toLowerCase())
+        const nonGeomFields = rawFields.filter(f =>
+          f.name.toLowerCase() !== geomCol.toLowerCase() &&
+          f.name.toLowerCase() !== 'fid' &&
+          !removedFields.has(f.name)
         );
 
+        if (!fieldsInfo) {
+          fieldsInfo = nonGeomFields.map(f => ({ name: f.name, type: f.type }));
+        }
+
         // Leer con geometría
-        const selectCols = colsToRead.map(c => `"${c}"`).join(',');
-        const query = selectCols
-          ? `SELECT ${selectCols}, "${geomCol}" FROM "${layer}"`
-          : `SELECT "${geomCol}" FROM "${layer}"`;
-        const geomRows = db.exec(query);
+        const geomRows = db.exec(`SELECT ${nonGeomFields.map(f=>`"${f.name}"`).join(',')}, "${geomCol}" FROM "${layer}"`);
         if (!geomRows.length) { db.close(); step++; setProgress(Math.round(step/totalSteps*90)); continue; }
 
+        const colNames = nonGeomFields.map(f => f.name);
         for (const row of geomRows[0].values) {
           const obj = {};
-          colsToRead.forEach((c, i) => { obj[c] = row[i]; });
-          obj.__geom__ = row[row.length - 1]; // blob geometría
+          colNames.forEach((c, i) => { obj[c] = row[i]; });
+          obj.__geom__ = row[row.length - 1]; // blob
 
-          // Recalcular área con round($area, 2) si corresponde y no fue eliminada
-          if (campoArea && !removedFields.has(campoArea) && recalcArea && obj.__geom__) {
-            const areaCalc = calcAreaFromBlob(obj.__geom__);
-            obj[campoArea] = areaCalc !== null ? areaCalc : null;
+          // Calcular área
+          if (campoArea && obj.__geom__) {
+            const area = calcAreaFromBlob(obj.__geom__);
+            if (area !== null) obj[campoArea] = area;
+          } else if (cfg.calcularArea && obj.__geom__) {
+            // tg_manzana no tiene campo area, lo añadimos
+            const area = calcAreaFromBlob(obj.__geom__);
+            if (area !== null) obj['area'] = area;
           }
 
           // Detección duplicados
           const keyParts = clavesCfg.map(k => obj[k] !== undefined ? String(obj[k]) : '?');
           const key = keyParts.join('|');
+
           if (seenKeys.has(key)) {
             dupCount++;
             const prev = seenKeys.get(key);
             const dupMsg = `Clave [${key}] → "${prev.fname}" y "${file.name}"`;
             if (!dupList.includes(dupMsg)) dupList.push(dupMsg);
+            // Conservar de igual modo (no eliminar, solo reportar)
           } else {
             seenKeys.set(key, { fname: file.name });
           }
-          obj.__src__ = file.name;
           allRows.push(obj);
         }
 
@@ -870,44 +762,29 @@ async function procesarAcopio() {
       setProgress(Math.round(step / totalSteps * 90));
     }
 
-    // Construir fieldsInfo desde camposFinales (respetando orden y exclusiones)
-    const fieldsInfo = camposFinales
-      .filter(c => c.toLowerCase() !== 'fid')
-      .map(c => ({ name: c, type: c === campoArea ? 'REAL' : 'TEXT' }));
-
-    // Detectar superposiciones entre polígonos de archivos distintos
-    let overlapCount = 0;
-    const overlapList = [];
-    if (cfg.tipoGeom === 'polygon' && allRows.length > 1) {
-      const byFile = {};
-      for (const row of allRows) { if(!byFile[row.__src__]) byFile[row.__src__]=[]; byFile[row.__src__].push(row); }
-      const fnames = Object.keys(byFile);
-      outer: for (let fi=0;fi<fnames.length-1;fi++) {
-        for (let fj=fi+1;fj<fnames.length;fj++) {
-          for (const rA of byFile[fnames[fi]]) {
-            const pA=extractRingForOverlap(rA.__geom__); if(!pA) continue;
-            for (const rB of byFile[fnames[fj]]) {
-              if (polysOverlap(pA, extractRingForOverlap(rB.__geom__))) {
-                overlapCount++;
-                const kA=clavesCfg.map(k=>rA[k]||'?').join('|');
-                const kB=clavesCfg.map(k=>rB[k]||'?').join('|');
-                overlapList.push(`[${kA}] de "${fnames[fi]}" ↔ [${kB}] de "${fnames[fj]}"`);
-                if(overlapList.length>=50) break outer;
-              }
-            }
-          }
-        }
-      }
-      if(overlapCount>0) log(`  ⚠️ ${layer}: ${overlapCount} superposición(es)`, 'warn');
+    // Si tg_manzana no tenía campo area en el origen, añadirlo a fieldsInfo
+    if (layer === 'tg_manzana' && fieldsInfo && !fieldsInfo.find(f=>f.name==='area') && allRows.some(r=>r.area!==undefined)) {
+      fieldsInfo.push({ name: 'area', type: 'REAL' });
     }
 
     if (allRows.length > 0) {
-      mergedData[layer] = { fields: fieldsInfo, rows: allRows, geomTypeName, duplicates: dupCount, dupList };
+      mergedData[layer] = {
+        fields: fieldsInfo || [],
+        rows: allRows,
+        geomTypeName,
+        duplicates: dupCount,
+        dupList,
+      };
     }
 
-    reportRows.push({ layer, total: allRows.length, duplicates: dupCount, dupList, overlaps: overlapCount, overlapList });
+    reportRows.push({
+      layer,
+      total: allRows.length,
+      duplicates: dupCount,
+      dupList,
+    });
+
     if (dupCount > 0) allDuplicates[layer] = dupList;
-    if (overlapCount > 0) allDuplicates['__overlap__' + layer] = overlapList;
   }
 
   log('🔧 Construyendo GeoPackage fusionado...', '');
@@ -924,8 +801,7 @@ async function procesarAcopio() {
 
   const excels = {};
   for (const [ln, ld] of layersConExcel) {
-    const excelNombre = LAYER_CONFIG[ln]?.excelNombre || ln;
-    excels[excelNombre] = buildExcel(excelNombre, ld.fields, ld.rows);
+    excels[ln] = buildExcel(ln, ld.fields, ld.rows);
   }
 
   setProgress(98);
@@ -937,8 +813,8 @@ async function procesarAcopio() {
   const inputNombre = ($('nombreAcopio').value || '').trim().replace(/[^a-zA-Z0-9_\-]/g,'_');
   const nombreBase = inputNombre || `acopio_${fecha}`;
   zip.file(`${nombreBase}.gpkg`, gpkgBytes);
-  for (const [excelNombre, xls] of Object.entries(excels)) {
-    zip.file(`excel/${excelNombre}.xlsx`, xls);
+  for (const [ln, xls] of Object.entries(excels)) {
+    zip.file(`excel/${ln}_${nombreBase}.xlsx`, xls);
   }
 
   const zipBlob = await zip.generateAsync({ type: 'blob' });
@@ -969,19 +845,11 @@ function mostrarReporte() {
 
   const d = state.resultData;
 
-  // Stats + alerta superposiciones
-  const totalOv = d.reportRows.reduce((s,r)=>s+(r.overlaps||0),0);
-  const alertaHtml = totalOv > 0
-    ? `<div style="grid-column:span 2;background:#fff3cd;border:1.5px solid var(--naranja);border-radius:8px;padding:10px 14px;font-size:0.82rem;color:#7d4e00;line-height:1.5;">
-        ⚠️ <strong>Se detectaron ${totalOv} superposición(es) entre acopios.</strong><br/>
-        Dos o más técnicos cubrieron la misma zona. Revisa el detalle abajo.</div>`
-    : `<div style="grid-column:span 2;background:#eafaf1;border:1.5px solid var(--verde2);border-radius:8px;padding:10px 14px;font-size:0.82rem;color:#1a5c38;">
-        ✅ <strong>Sin superposiciones detectadas</strong> entre los acopios cargados.</div>`;
+  // Stats
   $('statsGrid').innerHTML = `
     <div class="stat-box"><div class="stat-n">${d.totalArchivos}</div><div class="stat-l">Archivos procesados</div></div>
     <div class="stat-box"><div class="stat-n">${d.totalCapas}</div><div class="stat-l">Capas fusionadas</div></div>
     <div class="stat-box" style="grid-column:span 2"><div class="stat-n">${d.totalRegistros}</div><div class="stat-l">Registros totales en el acopio</div></div>
-    ${alertaHtml}
   `;
 
   // Tabla por capa
@@ -993,24 +861,22 @@ function mostrarReporte() {
     tr.innerHTML = `
       <td><strong>${r.layer}</strong></td>
       <td><span class="badge-num">${r.total}</span></td>
-      <td>${(r.overlaps||0) > 0
-        ? \`<span class="badge-warn">⚠️ \${r.overlaps} superposición(es)</span>\`
-        : '<span style="color:var(--verde2)">✅ Sin superposiciones</span>'
+      <td>${r.duplicates > 0
+        ? `<span class="badge-warn">⚠️ ${r.duplicates}</span>`
+        : '<span style="color:var(--verde2)">✅ Ninguno</span>'
       }</td>
     `;
     tbody.appendChild(tr);
   }
 
-  // Sección superposiciones
+  // Sección duplicados
   const dupSection = $('dupSection');
   dupSection.innerHTML = '';
-  const ovEntries = Object.entries(d.allDuplicates).filter(([k])=>k.startsWith('__overlap__'));
-  if (ovEntries.length > 0) {
-    let html = '<div class="dup-header">🔺 Detalle de superposiciones geométricas entre acopios</div>';
-    for (const [k, list] of ovEntries) {
-      const ln = k.replace('__overlap__','');
-      html += `<div style="font-size:0.78rem;font-weight:600;margin:8px 0 4px;color:var(--naranja)">Capa ${ln}:</div>`;
-      html += `<div class="dup-list">${list.map(x=>`• ${x}`).join('<br/>')}</div>`;
+  if (Object.keys(d.allDuplicates).length > 0) {
+    let html = '<div class="dup-header">⚠️ Detalle de duplicados encontrados</div>';
+    for (const [ln, list] of Object.entries(d.allDuplicates)) {
+      html += `<div style="font-size:0.78rem;font-weight:600;margin:8px 0 4px;color:var(--naranja)">${ln}</div>`;
+      html += `<div class="dup-list">${list.map(d => `• ${d}`).join('<br/>')}</div>`;
     }
     dupSection.innerHTML = html;
   }
@@ -1064,47 +930,28 @@ function buildCamposUI() {
 function renderCamposGrid(layerName) {
   const grid = $('camposGrid');
   grid.innerHTML = '';
+  const fields = state.layerFields[layerName] || [];
   const cfg = LAYER_CONFIG[layerName] || {};
-  const camposOrden = cfg.camposOrden || [];
+  const claves = cfg.claves || [];
   const removed = state.fieldRemovals[layerName] || new Set();
-  // Solo fid y area son opcionales (eliminables)
-  const OPCIONALES = new Set(['fid', cfg.campoArea].filter(Boolean));
 
-  for (const fname of camposOrden) {
-    const esOpcional = OPCIONALES.has(fname);
-    const esArea     = fname === cfg.campoArea;
-    const esFid      = fname === 'fid';
-    const esEliminado = removed.has(fname);
-
+  for (const f of fields) {
+    const esClave = claves.includes(f.name);
+    const esEliminado = removed.has(f.name);
     const div = document.createElement('div');
-    let clsExtra = '';
-    if (!esOpcional) clsExtra = ' clave';
-    if (esEliminado)  clsExtra += ' eliminado';
-    div.className = 'campo-item' + clsExtra;
-
-    let icono = esEliminado ? '🗑️' : (esOpcional ? '📋' : '🔑');
-    let badge = '';
-    if (!esOpcional)  badge = '<span class="cbadge">OBLIGATORIO</span>';
-    if (esArea)       badge = '<span class="cbadge" style="background:var(--verde)">ÁREA ✓ recalc.</span>';
-    if (esFid)        badge = '<span class="cbadge" style="background:var(--gris3)">FID</span>';
-    if (esArea && esEliminado) badge = '<span class="cbadge" style="background:var(--rojo)">ELIMINADO</span>';
-    if (esFid && esEliminado)  badge = '<span class="cbadge" style="background:var(--rojo)">ELIMINADO</span>';
-
-    div.innerHTML = `<span class="cicon">${icono}</span><span>${fname}</span>${badge}`;
-
-    if (esOpcional) {
+    div.className = 'campo-item' + (esClave ? ' clave' : '') + (esEliminado ? ' eliminado' : '');
+    div.innerHTML = `
+      <span class="cicon">${esClave ? '🔑' : (esEliminado ? '🗑️' : '📋')}</span>
+      <span>${f.name}</span>
+      ${esClave ? '<span class="cbadge">CLAVE</span>' : ''}
+      ${f.name === (cfg.campoArea) && !esClave ? '<span class="cbadge" style="background:var(--verde)">ÁREA</span>' : ''}
+    `;
+    if (!esClave) {
       div.style.cursor = 'pointer';
-      div.title = esEliminado ? 'Toca para incluir' : 'Toca para eliminar';
-      div.onclick = () => toggleField(layerName, fname);
+      div.onclick = () => toggleField(layerName, f.name);
     }
     grid.appendChild(div);
   }
-
-  // Nota informativa
-  const nota = document.createElement('div');
-  nota.style.cssText = 'grid-column:span 2;font-size:0.72rem;color:var(--gris3);margin-top:4px;';
-  nota.textContent = '🔑 Obligatorio — no se puede eliminar  |  📋 Toca para eliminar/incluir';
-  grid.appendChild(nota);
 }
 
 function toggleField(layerName, fieldName) {
@@ -1137,13 +984,15 @@ async function handleFiles(newFiles) {
       const layers = getLayersFromDb(db);
       item.layers = layers.map(l => l.name);
 
-      // Recopilar campos por capa: usar camposOrden definido en LAYER_CONFIG
+      // Recopilar campos por capa
       for (const l of layers) {
         if (!LAYER_CONFIG[l.name]) continue;
-        // Siempre usar el orden canónico definido, no lo que venga en el archivo
         if (!state.layerFields[l.name]) {
-          state.layerFields[l.name] = (LAYER_CONFIG[l.name].camposOrden || [])
-            .map(c => ({ name: c, type: c === (LAYER_CONFIG[l.name].campoArea) ? 'REAL' : 'TEXT' }));
+          const fields = getFieldsFromDb(db, l.name).filter(f =>
+            f.name.toLowerCase() !== l.geomCol.toLowerCase() &&
+            f.name.toLowerCase() !== 'fid'
+          );
+          state.layerFields[l.name] = fields;
         }
       }
       db.close();
@@ -1224,13 +1073,7 @@ function resetApp() {
 const dropZone = $('dropZone');
 const fileInput = $('fileInput');
 
-// El <label for="fileInput"> maneja el click nativamente en todos los browsers
-// Fallback JS por si el label no dispara en algún entorno especial:
-dropZone.addEventListener('click', (e) => {
-  if (e.target === dropZone || e.target.closest('#dropZone')) {
-    fileInput.click();
-  }
-});
+dropZone.addEventListener('click', () => fileInput.click());
 dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('over'); });
 dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
 dropZone.addEventListener('drop', e => {

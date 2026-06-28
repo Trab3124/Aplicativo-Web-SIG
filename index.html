@@ -82,7 +82,7 @@
   #dropZone .icon { font-size: 2.4rem; margin-bottom: 10px; }
   #dropZone p { font-size: 0.88rem; color: #5a7080; line-height: 1.5; }
   #dropZone strong { color: var(--azul); }
-  #fileInput { display: none; }
+  #fileInput { position:absolute; width:1px; height:1px; opacity:0; pointer-events:none; }
 
   /* LISTA DE ARCHIVOS */
   #fileList { margin-top: 12px; display: flex; flex-direction: column; gap: 6px; }
@@ -244,11 +244,11 @@
   <div class="card">
     <div class="card-header">📂 Paso 1 — Cargar archivos .gpkg</div>
     <div class="card-body">
-      <div id="dropZone">
+      <label id="dropZone" for="fileInput" style="display:block;cursor:pointer;">
         <div class="icon">📦</div>
         <p>Toca aquí para seleccionar tus archivos <strong>.gpkg</strong><br/>
         Puedes seleccionar varios a la vez</p>
-      </div>
+      </label>
       <input type="file" id="fileInput" accept=".gpkg" multiple/>
       <div id="fileList"></div>
     </div>
@@ -1224,7 +1224,13 @@ function resetApp() {
 const dropZone = $('dropZone');
 const fileInput = $('fileInput');
 
-dropZone.addEventListener('click', () => fileInput.click());
+// El <label for="fileInput"> maneja el click nativamente en todos los browsers
+// Fallback JS por si el label no dispara en algún entorno especial:
+dropZone.addEventListener('click', (e) => {
+  if (e.target === dropZone || e.target.closest('#dropZone')) {
+    fileInput.click();
+  }
+});
 dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('over'); });
 dropZone.addEventListener('dragleave', () => dropZone.classList.remove('over'));
 dropZone.addEventListener('drop', e => {

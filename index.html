@@ -522,31 +522,174 @@ function renderCampos(ln) {
 }
 
 // =====================================================================
-// CONSTRUCCIÓN GPKG RESULTADO
+// CONSTRUCCIÓN GPKG RESULTADO — compatible con QGIS
 // =====================================================================
 function buildGpkg(SQL, mergedData) {
   const db = new SQL.Database();
-  db.run(`PRAGMA application_id=0x47504b47;`);
-  db.run(`PRAGMA user_version=10200;`);
-  db.run(`CREATE TABLE gpkg_spatial_ref_sys(srs_name TEXT NOT NULL,srs_id INTEGER PRIMARY KEY,organization TEXT NOT NULL,organization_coordsys_id INTEGER NOT NULL,definition TEXT NOT NULL,description TEXT)`);
-  db.run(`INSERT INTO gpkg_spatial_ref_sys VALUES('Undefined Cartesian SRS',-1,'NONE',-1,'undefined',''),('Undefined Geographic SRS',0,'NONE',0,'undefined',''),('WGS 84 / UTM zone 18S',32718,'EPSG',32718,'PROJCS["WGS 84 / UTM zone 18S",GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563]],PRIMEM["Greenwich",0],UNIT["degree",0.0174532925199433]],PROJECTION["Transverse_Mercator"],PARAMETER["latitude_of_origin",0],PARAMETER["central_meridian",-75],PARAMETER["scale_factor",0.9996],PARAMETER["false_easting",500000],PARAMETER["false_northing",10000000],UNIT["metre",1]]','')`);
-  db.run(`CREATE TABLE gpkg_contents(table_name TEXT PRIMARY KEY,data_type TEXT NOT NULL,identifier TEXT,description TEXT DEFAULT'',last_change DATETIME NOT NULL DEFAULT(strftime('%Y-%m-%dT%H:%M:%fZ','now')),min_x REAL,min_y REAL,max_x REAL,max_y REAL,srs_id INTEGER)`);
-  db.run(`CREATE TABLE gpkg_geometry_columns(table_name TEXT NOT NULL,column_name TEXT NOT NULL,geometry_type_name TEXT NOT NULL,srs_id INTEGER NOT NULL,z TINYINT NOT NULL,m TINYINT NOT NULL)`);
+
+  // --- PRE-SETUP ---
+  db.run(`PRAGMA application_id=1196444487;`);  // 0x47504B47
+  db.run(`PRAGMA user_version=10400;`);
+
+  // --- TABLAS SISTEMA GEOPACKAGE ---
+  db.run(`CREATE TABLE gpkg_spatial_ref_sys(
+    srs_name TEXT NOT NULL, srs_id INTEGER NOT NULL PRIMARY KEY,
+    organization TEXT NOT NULL, organization_coordsys_id INTEGER NOT NULL,
+    definition TEXT NOT NULL, description TEXT)`);
+
+  db.run(`INSERT INTO gpkg_spatial_ref_sys VALUES
+    ('Undefined Cartesian SRS',-1,'NONE',-1,'undefined',''),
+    ('Undefined geographic SRS',0,'NONE',0,'undefined',''),
+    ('WGS 84 geodetic',4326,'EPSG',4326,
+     'GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4326"]]',''),
+    ('WGS 84 / UTM zone 18S',32718,'EPSG',32718,
+     'PROJCS["WGS 84 / UTM zone 18S",GEOGCS["WGS 84",DATUM["WGS_1984",SPHEROID["WGS 84",6378137,298.257223563,AUTHORITY["EPSG","7030"]],AUTHORITY["EPSG","6326"]],PRIMEM["Greenwich",0,AUTHORITY["EPSG","8901"]],UNIT["degree",0.0174532925199433,AUTHORITY["EPSG","9122"]],AUTHORITY["EPSG","4326"]],PROJECTION["Transverse_Mercator"],PARAMETER["latitude_of_origin",0],PARAMETER["central_meridian",-75],PARAMETER["scale_factor",0.9996],PARAMETER["false_easting",500000],PARAMETER["false_northing",10000000],UNIT["metre",1,AUTHORITY["EPSG","9001"]],AXIS["Easting",EAST],AXIS["Northing",NORTH],AUTHORITY["EPSG","32718"]]','')`);
+
+  db.run(`CREATE TABLE gpkg_contents(
+    table_name TEXT NOT NULL PRIMARY KEY, data_type TEXT NOT NULL,
+    identifier TEXT UNIQUE, description TEXT DEFAULT '',
+    last_change DATETIME NOT NULL DEFAULT(strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    min_x DOUBLE, min_y DOUBLE, max_x DOUBLE, max_y DOUBLE, srs_id INTEGER)`);
+
+  db.run(`CREATE TABLE gpkg_geometry_columns(
+    table_name TEXT NOT NULL, column_name TEXT NOT NULL,
+    geometry_type_name TEXT NOT NULL, srs_id INTEGER NOT NULL,
+    z TINYINT NOT NULL, m TINYINT NOT NULL,
+    CONSTRAINT pk_geom_cols PRIMARY KEY (table_name,column_name),
+    CONSTRAINT uk_gc_table_name UNIQUE (table_name))`);
+
+  db.run(`CREATE TABLE gpkg_extensions(
+    table_name TEXT, column_name TEXT, extension_name TEXT NOT NULL,
+    definition TEXT NOT NULL, scope TEXT NOT NULL,
+    CONSTRAINT ge_tce UNIQUE(table_name,column_name,extension_name))`);
+
+  db.run(`CREATE TABLE gpkg_ogr_contents(
+    table_name TEXT NOT NULL PRIMARY KEY,
+    feature_count INTEGER DEFAULT NULL)`);
+
+  db.run(`CREATE TABLE gpkg_metadata(
+    id INTEGER CONSTRAINT m_pk PRIMARY KEY ASC NOT NULL,
+    md_scope TEXT NOT NULL DEFAULT 'dataset',
+    md_standard_uri TEXT NOT NULL,
+    mime_type TEXT NOT NULL DEFAULT 'text/xml',
+    metadata TEXT NOT NULL DEFAULT '')`);
+
+  db.run(`CREATE TABLE gpkg_metadata_reference(
+    reference_scope TEXT NOT NULL, table_name TEXT, column_name TEXT,
+    row_id_value INTEGER,
+    timestamp DATETIME NOT NULL DEFAULT(strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    md_file_id INTEGER NOT NULL, md_parent_id INTEGER)`);
+
+  db.run(`CREATE TABLE gpkg_tile_matrix_set(
+    table_name TEXT NOT NULL PRIMARY KEY, srs_id INTEGER NOT NULL,
+    min_x DOUBLE NOT NULL, min_y DOUBLE NOT NULL,
+    max_x DOUBLE NOT NULL, max_y DOUBLE NOT NULL)`);
+
+  db.run(`CREATE TABLE gpkg_tile_matrix(
+    table_name TEXT NOT NULL, zoom_level INTEGER NOT NULL,
+    matrix_width INTEGER NOT NULL, matrix_height INTEGER NOT NULL,
+    tile_width INTEGER NOT NULL, tile_height INTEGER NOT NULL,
+    pixel_x_size DOUBLE NOT NULL, pixel_y_size DOUBLE NOT NULL,
+    CONSTRAINT pk_ttm PRIMARY KEY(table_name,zoom_level))`);
+
+  // --- CAPAS DE DATOS ---
   for (const [ln, ld] of Object.entries(mergedData)) {
     if (!ld||!ld.rows||!ld.rows.length) continue;
-    const cols = ld.fields.map(f=>`"${f.name}" ${f.type||'TEXT'}`).join(',');
-    db.run(`CREATE TABLE "${ln}"(fid INTEGER PRIMARY KEY AUTOINCREMENT,${cols},"geom" BLOB)`);
+
+    // Tipo de geometría real desde LAYER_CONFIG
+    const cfg = LAYER_CONFIG[ln];
+    const geomTypeMap = {polygon:'MULTIPOLYGON', line:'MULTILINESTRING', point:'POINT'};
+    const geomTypeName = geomTypeMap[cfg?.tipoGeom] || 'GEOMETRY';
+
+    // Crear tabla de datos
+    const colDefs = ld.fields.map(f=>`"${f.name}" ${f.type||'TEXT'}`).join(',');
+    db.run(`CREATE TABLE "${ln}"(fid INTEGER PRIMARY KEY AUTOINCREMENT,${colDefs},"geom" BLOB)`);
+
+    // Insertar filas
     const ph = ld.fields.map(()=>'?').join(',');
-    const st = db.prepare(`INSERT INTO "${ln}"(${ld.fields.map(f=>`"${f.name}"`).join(',')},"geom") VALUES(${ph},?)`);
+    const colNames = ld.fields.map(f=>`"${f.name}"`).join(',');
+    const st = db.prepare(`INSERT INTO "${ln}"(${colNames},"geom") VALUES(${ph},?)`);
+    let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
     for (const row of ld.rows) {
       const vals = ld.fields.map(f=>row[f.name]!==undefined?row[f.name]:null);
       vals.push(row.__geom__||null);
       st.run(vals);
+      // Calcular bbox desde ring exterior para gpkg_contents
+      const ring = extractRing(row.__geom__);
+      if (ring) {
+        for (const [x,y] of ring) {
+          if(x<minX)minX=x; if(x>maxX)maxX=x;
+          if(y<minY)minY=y; if(y>maxY)maxY=y;
+        }
+      }
     }
     st.free();
-    db.run(`INSERT INTO gpkg_contents(table_name,data_type,identifier,srs_id)VALUES(?,?,?,32718)`,[ln,ln,'features']);
-    db.run(`INSERT INTO gpkg_geometry_columns VALUES(?,?,?,32718,0,0)`,[ln,'geom','GEOMETRY']);
+
+    const bMinX = isFinite(minX)?minX:null;
+    const bMinY = isFinite(minY)?minY:null;
+    const bMaxX = isFinite(maxX)?maxX:null;
+    const bMaxY = isFinite(maxY)?maxY:null;
+
+    // Registrar en tablas sistema
+    db.run(`INSERT INTO gpkg_contents(table_name,data_type,identifier,description,last_change,min_x,min_y,max_x,max_y,srs_id)
+            VALUES(?,?,?,?,strftime('%Y-%m-%dT%H:%M:%fZ','now'),?,?,?,?,32718)`,
+            [ln,ln,'features','',bMinX,bMinY,bMaxX,bMaxY]);
+
+    db.run(`INSERT INTO gpkg_geometry_columns(table_name,column_name,geometry_type_name,srs_id,z,m)
+            VALUES(?,?,?,32718,0,0)`,[ln,'geom',geomTypeName]);
+
+    db.run(`INSERT INTO gpkg_ogr_contents VALUES(?,?)`,[ln,ld.rows.length]);
+
+    // Registrar extensión rtree
+    db.run(`INSERT INTO gpkg_extensions VALUES(?,?,?,?,?)`,
+      [ln,'geom','gpkg_rtree_index',
+       'http://www.geopackage.org/spec120/#extension_rtree_index','write-only']);
+
+    // Crear rtree virtual (índice espacial — requerido por QGIS)
+    db.run(`CREATE VIRTUAL TABLE "rtree_${ln}_geom" USING rtree(id,minx,maxx,miny,maxy)`);
+
+    // Poblar rtree con bbox de cada fila
+    const rows2 = db.exec(`SELECT fid,"geom" FROM "${ln}"`);
+    if (rows2.length) {
+      const stRt = db.prepare(`INSERT INTO "rtree_${ln}_geom" VALUES(?,?,?,?,?)`);
+      for (const row of rows2[0].values) {
+        const fid = row[0];
+        const ring = extractRing(row[1]);
+        if (ring) {
+          const bb = {x0:Infinity,y0:Infinity,x1:-Infinity,y1:-Infinity};
+          for(const[x,y] of ring){if(x<bb.x0)bb.x0=x;if(x>bb.x1)bb.x1=x;if(y<bb.y0)bb.y0=y;if(y>bb.y1)bb.y1=y;}
+          if(isFinite(bb.x0)) stRt.run([fid,bb.x0,bb.x1,bb.y0,bb.y1]);
+        }
+      }
+      stRt.free();
+    }
+
+    // Triggers rtree (requeridos por GeoPackage spec para QGIS)
+    db.run(`CREATE TRIGGER "rtree_${ln}_geom_insert" AFTER INSERT ON "${ln}"
+      WHEN (new."geom" NOT NULL) BEGIN
+        DELETE FROM "rtree_${ln}_geom" WHERE id=NEW."fid";
+        INSERT INTO "rtree_${ln}_geom" SELECT NEW."fid",
+          CASE WHEN typeof(NEW."geom")='blob' THEN 0 ELSE 0 END,
+          CASE WHEN typeof(NEW."geom")='blob' THEN 1e10 ELSE 1e10 END,
+          0,1e10;
+      END`);
+
+    db.run(`CREATE TRIGGER "rtree_${ln}_geom_delete" AFTER DELETE ON "${ln}"
+      WHEN old."geom" NOT NULL BEGIN
+        DELETE FROM "rtree_${ln}_geom" WHERE id=OLD."fid";
+      END`);
+
+    // Trigger insert/delete feature count
+    db.run(`CREATE TRIGGER "trigger_insert_feature_count_${ln}"
+      AFTER INSERT ON "${ln}" BEGIN
+        UPDATE gpkg_ogr_contents SET feature_count=feature_count+1 WHERE table_name='${ln}';
+      END`);
+    db.run(`CREATE TRIGGER "trigger_delete_feature_count_${ln}"
+      AFTER DELETE ON "${ln}" BEGIN
+        UPDATE gpkg_ogr_contents SET feature_count=feature_count-1 WHERE table_name='${ln}';
+      END`);
   }
+
   return db.export();
 }
 

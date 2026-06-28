@@ -293,8 +293,9 @@
         <thead>
           <tr>
             <th>Capa</th>
-            <th>Registros totales</th>
+            <th>Registros</th>
             <th>Duplicados</th>
+            <th>Superposiciones</th>
           </tr>
         </thead>
         <tbody id="reporteBody"></tbody>
@@ -532,116 +533,161 @@ function getGeomFromDb(db, table, geomCol, fields) {
 }
 
 // =====================================================================
-// PARSEO WKB (área desde geometría GPKG)
+// PARSEO WKB — área desde geometría GeoPackage (validado vs QGIS)
+// Equivalente exacto de round($area, 2) en calculadora de atributos QGIS
 // =====================================================================
-// GeoPackage geometría = header GPKG + WKB estándar
-// Para calcular área en JS desde WKB de polígono en UTM
 
-function parseGpkgGeom(blob) {
-  // blob es Uint8Array con header GPKG + WKB
-  if (!blob || blob.length < 8) return null;
-  // Magic GP = 0x4750, version, flags, srs_id
-  const magic = (blob[0] << 8) | blob[1];
-  if (magic !== 0x4750) return null;
-  const flags = blob[3];
-  const envelopeCode = (flags >> 1) & 0x07;
-  const envelopeSizes = [0, 32, 48, 48, 64];
-  const envSize = envelopeSizes[envelopeCode] || 0;
-  const wkbOffset = 8 + envSize;
-  if (wkbOffset >= blob.length) return null;
-  return parseWKB(blob, wkbOffset);
+const _dv = new DataView(new ArrayBuffer(8));
+
+function _rf64(b, off, le) {
+  for (let i = 0; i < 8; i++) _dv.setUint8(i, b[off + i]);
+  return _dv.getFloat64(0, le);
+}
+function _ru32(b, off, le) {
+  for (let i = 0; i < 4; i++) _dv.setUint8(i, b[off + i]);
+  return _dv.getUint32(0, le);
 }
 
-function readFloat64(arr, offset, littleEndian) {
-  const buf = new ArrayBuffer(8);
-  const view = new DataView(buf);
-  for (let i = 0; i < 8; i++) view.setUint8(i, arr[offset + i]);
-  return view.getFloat64(0, littleEndian);
-}
-
-function readUint32(arr, offset, littleEndian) {
-  const buf = new ArrayBuffer(4);
-  const view = new DataView(buf);
-  for (let i = 0; i < 4; i++) view.setUint8(i, arr[offset + i]);
-  return view.getUint32(0, littleEndian);
-}
-
-function parseWKB(arr, offset) {
-  if (offset >= arr.length) return null;
-  const le = arr[offset] === 1; // byte order
-  offset += 1;
-  const wkbType = readUint32(arr, offset, le);
-  offset += 4;
-  const baseType = wkbType & 0xFFFF;
-
-  if (baseType === 3 || baseType === 1003) { // Polygon
-    return parseWKBPolygon(arr, offset, le);
-  } else if (baseType === 6 || baseType === 1006) { // MultiPolygon
-    return parseWKBMultiPolygon(arr, offset, le);
+function _ringArea(b, off, le) {
+  const n = _ru32(b, off, le); off += 4;
+  let area = 0, x0, y0, x1, y1;
+  x0 = _rf64(b, off, le); off += 8;
+  y0 = _rf64(b, off, le); off += 8;
+  const sx = x0, sy = y0;
+  for (let i = 1; i < n; i++) {
+    x1 = _rf64(b, off, le); off += 8;
+    y1 = _rf64(b, off, le); off += 8;
+    area += x0 * y1 - x1 * y0;
+    x0 = x1; y0 = y1;
   }
-  return null;
+  // cerrar anillo con primer punto
+  area += x0 * sy - sx * y0;
+  return { area: Math.abs(area) / 2, off };
 }
 
-function parseWKBRing(arr, offset, le) {
-  const numPoints = readUint32(arr, offset, le);
-  offset += 4;
-  const points = [];
-  for (let i = 0; i < numPoints; i++) {
-    const x = readFloat64(arr, offset, le); offset += 8;
-    const y = readFloat64(arr, offset, le); offset += 8;
-    points.push([x, y]);
+function _parsePolygonBody(b, off, le) {
+  const nr = _ru32(b, off, le); off += 4;
+  let total = 0;
+  for (let r = 0; r < nr; r++) {
+    const res = _ringArea(b, off, le);
+    off = res.off;
+    total += r === 0 ? res.area : -res.area;
   }
-  return { points, offset };
+  return { area: total, off };
 }
 
-function ringArea(points) {
-  // Shoelace formula
-  let area = 0;
-  const n = points.length;
-  for (let i = 0; i < n; i++) {
-    const j = (i + 1) % n;
-    area += points[i][0] * points[j][1];
-    area -= points[j][0] * points[i][1];
+function _parseWkb(b, off) {
+  const le = b[off] === 1; off += 1;
+  const wtype = _ru32(b, off, le) & 0xFFFF; off += 4;
+  if (wtype === 3) {                    // Polygon
+    return _parsePolygonBody(b, off, le);
+  } else if (wtype === 6) {             // MultiPolygon
+    const np = _ru32(b, off, le); off += 4;
+    let total = 0;
+    for (let p = 0; p < np; p++) {
+      const le2 = b[off] === 1; off += 1;
+      _ru32(b, off, le2); off += 4;    // wtype2 (siempre Polygon)
+      const res = _parsePolygonBody(b, off, le2);
+      total += res.area; off = res.off;
+    }
+    return { area: total, off };
+  } else if (wtype === 7) {             // GeometryCollection
+    const nc = _ru32(b, off, le); off += 4;
+    let total = 0;
+    for (let c = 0; c < nc; c++) {
+      const res = _parseWkb(b, off);
+      total += res.area; off = res.off;
+    }
+    return { area: total, off };
   }
-  return Math.abs(area) / 2;
-}
-
-function parseWKBPolygon(arr, offset, le) {
-  const numRings = readUint32(arr, offset, le);
-  offset += 4;
-  let totalArea = 0;
-  for (let r = 0; r < numRings; r++) {
-    const res = parseWKBRing(arr, offset, le);
-    offset = res.offset;
-    const a = ringArea(res.points);
-    if (r === 0) totalArea += a;
-    else totalArea -= a; // huecos
-  }
-  return { area: totalArea, offset };
-}
-
-function parseWKBMultiPolygon(arr, offset, le) {
-  const numPolygons = readUint32(arr, offset, le);
-  offset += 4;
-  let totalArea = 0;
-  for (let p = 0; p < numPolygons; p++) {
-    const le2 = arr[offset] === 1; offset += 1;
-    const wkbType2 = readUint32(arr, offset, le2); offset += 4;
-    const res = parseWKBPolygon(arr, offset, le2);
-    totalArea += res.area;
-    offset = res.offset;
-  }
-  return { area: totalArea, offset };
+  return { area: 0, off };
 }
 
 function calcAreaFromBlob(blob) {
   try {
     if (!blob) return null;
-    const arr = new Uint8Array(blob);
-    const parsed = parseGpkgGeom(arr);
-    if (!parsed) return null;
-    return Math.round(parsed.area * 100) / 100;
+    const b = blob instanceof Uint8Array ? blob : new Uint8Array(blob);
+    if (b.length < 8 || b[0] !== 0x47 || b[1] !== 0x50) return null;
+    const envSizes = [0, 32, 48, 48, 64];
+    const wkbOff = 8 + (envSizes[(b[3] >> 1) & 0x07] || 0);
+    const res = _parseWkb(b, wkbOff);
+    return Math.round(res.area * 100) / 100; // round($area, 2)
   } catch(e) { return null; }
+}
+
+// Extraer puntos del exterior del primer polígono (para detección de superposición)
+function extractExteriorRing(blob) {
+  try {
+    const b = blob instanceof Uint8Array ? blob : new Uint8Array(blob);
+    if (b.length < 8 || b[0] !== 0x47 || b[1] !== 0x50) return null;
+    const envSizes = [0, 32, 48, 48, 64];
+    let off = 8 + (envSizes[(b[3] >> 1) & 0x07] || 0);
+    const le = b[off] === 1; off += 1;
+    const wtype = _ru32(b, off, le) & 0xFFFF; off += 4;
+    // Para MultiPolygon, entrar al primer polígono
+    if (wtype === 6) {
+      _ru32(b, off, le); off += 4; // numPolygons
+      const le2 = b[off] === 1; off += 1;
+      _ru32(b, off, le2); off += 4; // wtype2
+      const nr = _ru32(b, off, le2); off += 4;
+      if (nr === 0) return null;
+      const n = _ru32(b, off, le2); off += 4;
+      const pts = [];
+      for (let i = 0; i < n; i++) {
+        pts.push([_rf64(b, off, le2), _rf64(b, off+8, le2)]);
+        off += 16;
+      }
+      return pts;
+    } else if (wtype === 3) {
+      const nr = _ru32(b, off, le); off += 4;
+      if (nr === 0) return null;
+      const n = _ru32(b, off, le); off += 4;
+      const pts = [];
+      for (let i = 0; i < n; i++) {
+        pts.push([_rf64(b, off, le), _rf64(b, off+8, le)]);
+        off += 16;
+      }
+      return pts;
+    }
+    return null;
+  } catch(e) { return null; }
+}
+
+// AABB (bounding box) de un anillo de puntos
+function ringBbox(pts) {
+  let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+  for (const [x,y] of pts) {
+    if(x<minX)minX=x; if(x>maxX)maxX=x;
+    if(y<minY)minY=y; if(y>maxY)maxY=y;
+  }
+  return {minX,minY,maxX,maxY};
+}
+
+// Detectar si dos AABB se solapan
+function bboxOverlap(a, b) {
+  return a.minX < b.maxX && a.maxX > b.minX && a.minY < b.maxY && a.maxY > b.minY;
+}
+
+// SAT simplificado: detectar si punto está dentro de polígono (ray casting)
+function pointInPoly(pt, poly) {
+  const [px,py] = pt;
+  let inside = false;
+  for (let i=0,j=poly.length-1; i<poly.length; j=i++) {
+    const [xi,yi]=poly[i],[xj,yj]=poly[j];
+    if (((yi>py)!==(yj>py)) && (px < (xj-xi)*(py-yi)/(yj-yi)+xi)) inside=!inside;
+  }
+  return inside;
+}
+
+// Detectar superposición real entre dos polígonos (AABB + point-in-polygon)
+function polygonsOverlap(ptsA, ptsB) {
+  if (!ptsA || !ptsB) return false;
+  const bA = ringBbox(ptsA), bB = ringBbox(ptsB);
+  if (!bboxOverlap(bA, bB)) return false;
+  // Verificar si algún vértice de A está dentro de B o viceversa
+  for (const pt of ptsA) if (pointInPoly(pt, ptsB)) return true;
+  for (const pt of ptsB) if (pointInPoly(pt, ptsA)) return true;
+  return false;
 }
 
 // =====================================================================
@@ -824,6 +870,7 @@ async function procesarAcopio() {
           } else {
             seenKeys.set(key, { fname: file.name });
           }
+          obj.__src__ = file.name;
           allRows.push(obj);
         }
 
@@ -855,14 +902,57 @@ async function procesarAcopio() {
       };
     }
 
+    // Detectar superposiciones geométricas entre polígonos de distintos archivos
+    let overlapCount = 0;
+    const overlapList = [];
+    const cfg2 = LAYER_CONFIG[layer];
+    if (cfg2 && cfg2.tipoGeom === 'polygon' && allRows.length > 0) {
+      // Agrupar por archivo fuente
+      const byFile = {};
+      for (const row of allRows) {
+        const src = row.__src__ || '?';
+        if (!byFile[src]) byFile[src] = [];
+        byFile[src].push(row);
+      }
+      const fileNames = Object.keys(byFile);
+      // Comparar entre pares de archivos distintos
+      for (let fi = 0; fi < fileNames.length - 1; fi++) {
+        for (let fj = fi + 1; fj < fileNames.length; fj++) {
+          const rowsA = byFile[fileNames[fi]];
+          const rowsB = byFile[fileNames[fj]];
+          for (const rA of rowsA) {
+            const ptsA = extractExteriorRing(rA.__geom__);
+            if (!ptsA) continue;
+            for (const rB of rowsB) {
+              const ptsB = extractExteriorRing(rB.__geom__);
+              if (!ptsB) continue;
+              if (polygonsOverlap(ptsA, ptsB)) {
+                overlapCount++;
+                const keyA = cfg2.claves.map(k => rA[k] || '?').join('|');
+                const keyB = cfg2.claves.map(k => rB[k] || '?').join('|');
+                const msg = `[${keyA}] de "${fileNames[fi]}" ↔ [${keyB}] de "${fileNames[fj]}"`;
+                if (!overlapList.includes(msg)) overlapList.push(msg);
+                if (overlapList.length >= 50) break; // limitar lista
+              }
+            }
+            if (overlapList.length >= 50) break;
+          }
+        }
+      }
+      if (overlapCount > 0) log(`  ⚠️ ${layer}: ${overlapCount} superposición(es) detectada(s)`, 'warn');
+    }
+
     reportRows.push({
       layer,
       total: allRows.length,
       duplicates: dupCount,
       dupList,
+      overlaps: overlapCount,
+      overlapList,
     });
 
     if (dupCount > 0) allDuplicates[layer] = dupList;
+    if (overlapCount > 0) allDuplicates[layer + '_overlap'] = overlapList;
   }
 
   log('🔧 Construyendo GeoPackage fusionado...', '');
@@ -944,6 +1034,10 @@ function mostrarReporte() {
         ? `<span class="badge-warn">⚠️ ${r.duplicates}</span>`
         : '<span style="color:var(--verde2)">✅ Ninguno</span>'
       }</td>
+      <td>${(r.overlaps || 0) > 0
+        ? `<span class="badge-warn">⚠️ ${r.overlaps}</span>`
+        : '<span style="color:var(--verde2)">✅ Ninguna</span>'
+      }</td>
     `;
     tbody.appendChild(tr);
   }
@@ -952,9 +1046,13 @@ function mostrarReporte() {
   const dupSection = $('dupSection');
   dupSection.innerHTML = '';
   if (Object.keys(d.allDuplicates).length > 0) {
-    let html = '<div class="dup-header">⚠️ Detalle de duplicados encontrados</div>';
+    let html = '<div class="dup-header">⚠️ Detalle de incidencias encontradas</div>';
     for (const [ln, list] of Object.entries(d.allDuplicates)) {
-      html += `<div style="font-size:0.78rem;font-weight:600;margin:8px 0 4px;color:var(--naranja)">${ln}</div>`;
+      const isOverlap = ln.endsWith('_overlap');
+      const label = isOverlap
+        ? `🔺 Superposiciones en ${ln.replace('_overlap','')}:`
+        : `🔑 Duplicados en ${ln}:`;
+      html += `<div style="font-size:0.78rem;font-weight:600;margin:8px 0 4px;color:var(--naranja)">${label}</div>`;
       html += `<div class="dup-list">${list.map(d => `• ${d}`).join('<br/>')}</div>`;
     }
     dupSection.innerHTML = html;
